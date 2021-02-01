@@ -23,12 +23,15 @@ OFAI_Celery_func = Celery('OFAI_Celery_func', broker=broker, backend=backend)
 '''
 workstation_tasks
 '''
-@OFAI_Celery_func.task
-def redis_arm_product_update():
+@OFAI_Celery_func.task(bind=True)
+def redis_arm_product_update(self):
     arm_product_ptr = {}
     uri = "mongodb+srv://liyiliou:liyiliou@cluster-yahoo-1.5gjuk.mongodb.net/Cluster-Yahoo-1?retryWrites=true&w=majority"
-    client = pymongo.MongoClient(uri)
-    db = client['ASRS-Cluster-0']
+    try:
+        client = pymongo.MongoClient(uri)
+        db = client['ASRS-Cluster-0']
+    except:
+        Sigkill_func(self.request.id)
     storage_db = db["Storages"]
     product_db = db["Products"]
     product_dict = {}
@@ -61,11 +64,14 @@ def redis_arm_product_update():
     for key, value in arm_product_ptr.items():
         redis_dict_set(key,value)
 
-@OFAI_Celery_func.task
-def order_assign(index_label,index,num):
+@OFAI_Celery_func.task(bind=True)
+def order_assign(self, index_label,index,num):
     uri = "mongodb+srv://liyiliou:liyiliou@cluster-yahoo-1.5gjuk.mongodb.net/Cluster-Yahoo-1?retryWrites=true&w=majority"
-    client = pymongo.MongoClient(uri)
-    db = client['ASRS-Cluster-0']
+    try:
+        client = pymongo.MongoClient(uri)
+        db = client['ASRS-Cluster-0']
+    except:
+        Sigkill_func(self.request.id)
     order_db = db['Orders']
     order_dict = {}
     for order_i in order_db.find({"$and":[{index_label:index},{"status":"processing"}]}):
@@ -85,8 +91,8 @@ def order_assign(index_label,index,num):
 
 
 
-@OFAI_Celery_func.task
-def order_pick(ordr_l_s):
+@OFAI_Celery_func.task(bind=True)
+def order_pick(self, ordr_l_s):
     r = redis.Redis(host='localhost', port=6379, decode_responses=False)
     ordr_l = eval(ordr_l_s)
     #訂單串的商品集合 
@@ -173,8 +179,8 @@ def order_pick(ordr_l_s):
 #             print("工作站id: ",workstation_id," 撿取結束")
 #     print("訂單池沒有訂單")
 
-@OFAI_Celery_func.task
-def workstation_open(workstation_id,index_label,index,num):
+@OFAI_Celery_func.task(bind=True)
+def workstation_open(self, workstation_id,index_label,index,num):
     r = redis.Redis(host='localhost', port=6379, decode_responses=False)
     lock_name = "order_assignment"
     if r.exists(workstation_id+"open") == 0:
@@ -223,12 +229,15 @@ workstation_tasks
 '''
 robot_arm_tasks
 '''
-@OFAI_Celery_func.task  
-def arms_store(container_id,arm_id):
+@OFAI_Celery_func.task(bind=True)
+def arms_store(self, container_id,arm_id):
     #先從arm_id找出可放入的位置在將container放入並更新資料庫
     uri = "mongodb+srv://liyiliou:liyiliou@cluster-yahoo-1.5gjuk.mongodb.net/Cluster-Yahoo-1?retryWrites=true&w=majority"
-    client = pymongo.MongoClient(uri)
-    db = client['ASRS-Cluster-0']
+    try:
+        client = pymongo.MongoClient(uri)
+        db = client['ASRS-Cluster-0']
+    except:
+        Sigkill_func(self.request.id)
     product_db = db["Products"]
     container_db = db["Containers"]
     storage_db = db["Storages"]
@@ -247,8 +256,8 @@ def arms_store(container_id,arm_id):
     print("Storaging container: container_id: " + container_id + "'s state is changed to in_grid")
 
     
-@OFAI_Celery_func.task  
-def arms_pick(container_id):
+@OFAI_Celery_func.task(bind=True)
+def arms_pick(self, container_id):
     #機器手臂撿取container 並會判斷他上方是否有阻礙的container會先行移開在撿取目標container並更新資料庫
     
     ##redis get
@@ -257,8 +266,11 @@ def arms_pick(container_id):
     dists = redis_dict_get("dists")
     
     uri = "mongodb+srv://liyiliou:liyiliou@cluster-yahoo-1.5gjuk.mongodb.net/Cluster-Yahoo-1?retryWrites=true&w=majority"
-    client = pymongo.MongoClient(uri)
-    db = client['ASRS-Cluster-0']
+    try:
+        client = pymongo.MongoClient(uri)
+        db = client['ASRS-Cluster-0']
+    except:
+        Sigkill_func(self.request.id)
     container_db = db["Containers"]
     storage_db = db["Storages"]
    
@@ -312,8 +324,8 @@ def arms_pick(container_id):
     print("Picking container: container_id: " + container_id + "'s state is changed to on_conveyor")
 
 
-@OFAI_Celery_func.task  
-def arms_work_transmit(arm_id):
+@OFAI_Celery_func.task(bind=True)
+def arms_work_transmit(self, arm_id):
     # arms_dict = {}
     # arms_dict[arm_id] = redis_dict_get(arm_id)    
     '''
@@ -354,16 +366,19 @@ robot_arm_tasks
 '''
 robot_arm_tasks
 '''
-@OFAI_Celery_func.task  
-def workstation_get(container_id):
+@OFAI_Celery_func.task(bind=True)
+def workstation_get(self, container_id):
     # 工作站收到container
     container_status(container_id,'in_workstation')
 
-@OFAI_Celery_func.task  
-def order_check(workstation_id, order_id):
+@OFAI_Celery_func.task(bind=True) 
+def order_check(self, workstation_id, order_id):
     uri = "mongodb+srv://liyiliou:liyiliou@cluster-yahoo-1.5gjuk.mongodb.net/Cluster-Yahoo-1?retryWrites=true&w=majority"
-    client = pymongo.MongoClient(uri)
-    db = client['ASRS-Cluster-0']
+    try:
+        client = pymongo.MongoClient(uri)
+        db = client['ASRS-Cluster-0']
+    except:
+        Sigkill_func(self.request.id)
     workstation_db = db["Workstations"]
     workstation_info = workstation_db.find({'workstation_id':workstation_id})
     for ws_i in workstation_info:
@@ -373,12 +388,15 @@ def order_check(workstation_id, order_id):
     else:
         return False
     
-@OFAI_Celery_func.task  
-def workstation_workend(workstation_id,order):
+@OFAI_Celery_func.task(bind=True)
+def workstation_workend(self, workstation_id,order):
     #工作站檢取完後 刪除工作
     uri = "mongodb+srv://liyiliou:liyiliou@cluster-yahoo-1.5gjuk.mongodb.net/Cluster-Yahoo-1?retryWrites=true&w=majority"
-    client = pymongo.MongoClient(uri)
-    db = client['ASRS-Cluster-0']
+    try:
+        client = pymongo.MongoClient(uri)
+        db = client['ASRS-Cluster-0']
+    except:
+        Sigkill_func(self.request.id)
     workstation_db = db["Workstations"]
     ws = workstation_db.find({'workstation_id':workstation_id})
     for ws_i in ws:
@@ -392,8 +410,8 @@ def workstation_workend(workstation_id,order):
     newvalues = { "$unset": {"work."+order:{}}}
     workstation_db.update(myquery,newvalues)
 
-@OFAI_Celery_func.task  
-def container_operate(container_id):
+@OFAI_Celery_func.task(bind=True)
+def container_operate(self, container_id):
     workstation_get.delay(container_id)
     order_id, workstation_id = workstation_pick(container_id)
     if order_check(workstation_id, order_id):
@@ -407,3 +425,8 @@ def container_operate(container_id):
 '''
 robot_arm_tasks
 '''
+
+@OFAI_Celery_func.task(bind=True)
+def Sigkill_func(self, task_id):
+    celery.task.control.revoke(task_id, terminate=True, signal='SIGKILL')
+    return True
