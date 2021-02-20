@@ -115,44 +115,77 @@ def order_pick(self, workstation_id):
     #排序機器手臂工作量
     arm_key_list = arm_work_sort_list()
     #依商品順序處理
-    for order_index,order_prd in enumerate(ws_order_prd):
-        #時間戳
+    prd_list = []
+    prd_content = {}
+    for order_index,order_content in enumerate(ws_order_prd):
+        for prd,pqt in order_content.items():
+            if prd not in prd_content:
+                prd_list.append(prd)
+                prd_content[prd] = {"qt":pqt,"order":{ordr_l[order_index]:pqt}}
+            else:
+                prd_content[prd]["qt"] += pqt
+                prd_content[prd]["order"].update({ordr_l[order_index]:pqt})
+    
+    while len(prd_list)>0:
+        pid = prd_list[0]
         oi = get_time_string()
         numbering = 0
-        for pid,pqt in order_prd.items():
-            isbreak = False
-            #先找外層再找內層
-            for layer in range(1,-1,-1):
-                if not isbreak:
-                    #排序機器手臂工作量
-                    arm_key_all = copy.deepcopy(arm_key_list) 
-                    while len(arm_key_all) > 0:
-                        arm_id = arm_key_all[0]
-                        arm_key_all.remove(arm_id)
-                        #手臂是否有此商品ＩＤ
-                        lock_name = arm_id + "_pid"
-                        arm_product_lock = acquire_lock_with_timeout(r, lock_name, acquire_timeout=3, lock_timeout=30)
-                        if arm_product_lock != False:
-                            container_id = arm_product(arm_id,pid,layer)
-                            if container_id != "" :
-                                #若有
-                                arm_id = container_armid(container_id)
-                                workstation_addpick(ordr_l[order_index],container_id,pid,pqt)
-                                value = (1,oi,numbering,container_id)
-                                numbering += 1
-                                #更新對應redis
-                                redis_data_update(arm_id,value)
-                                release_lock(r, lock_name, arm_product_lock)
-                                print("arm_id: " + arm_id)
-                                isbreak = True
-                                print(oi,arm_id,layer,pid,container_id)
-                                #改container_db狀態
-                                container_waiting(container_id)
-                                arms_work_transmit.delay(arm_id)
-                                break
+        prd_qt = prd_content[pid]["qt"]
+        isbreak = False
+        #先找外層再找內層
+        for layer in range(1,-1,-1):
+            if not isbreak:
+                #排序機器手臂工作量
+                arm_key_all = copy.deepcopy(arm_key_list) 
+                while len(arm_key_all) > 0:
+                    arm_id = arm_key_all[0]
+                    arm_key_all.remove(arm_id)
+                    #手臂是否有此商品ＩＤ
+                    lock_name = arm_id + "_pid"
+                    arm_product_lock = acquire_lock_with_timeout(r, lock_name, acquire_timeout=3, lock_timeout=30)
+                    if arm_product_lock != False:
+                        container_id = arm_product(arm_id,pid,layer)
+                        if container_id != "" :
+                            #若有
+                            #先判斷是否同一container是否有其他商品也在其他訂單商品列表中
+                            container_bundle,container_contents = container_otherprd(container_id,prd_list)
+                            #container所在的機器手臂ID
+                            arm_id = container_armid(container_id)
+                            #container 放入 工作站內指定訂單中
+                            for bundle_pid in container_bundle:
+                                pid_order_dict = prd_content[bundle_pid]["order"]
+                                pid_pick_order_list = []
+                                for order_id,pqt in pid_order_dict.items():
+                                    #若container內pid商品數量還夠
+                                    if container_contents[bundle_pid] >= pqt:
+                                        #container內pid商品數量檢出
+                                        container_contents[bundle_pid] -= pqt
+                                        #訂單商品pid數量檢出
+                                        prd_qt -= pqt
+                                        #工作站增加要撿取之container與商品pid資訊
+                                        workstation_addpick(order_id,container_id,bundle_pid,pqt)
+                                        pid_pick_order_list.append(order_id)
+                                #將檢出的被訂單刪除
+                                for pop_order in pid_pick_order_list:
+                                    prd_content[bundle_pid]["order"].pop(pop_order,None)
+                                #若商品已無訂單需求則刪除商品
+                                if prd_content[bundle_pid]["order"] == {}:
+                                    prd_list.remove(bundle_pid)
+                            value = (1,oi,numbering,container_id)
+                            numbering += 1
+                            #更新對應redis
+                            redis_data_update(arm_id,value)
                             release_lock(r, lock_name, arm_product_lock)
-                        else:
-                            arm_key_all.insert(4,arm_id)
+                            
+                            print(oi,arm_id,layer,pid,container_id)
+                            #改container_db狀態
+                            container_waiting(container_id)
+                            arms_work_transmit.delay(arm_id)
+                            isbreak = True
+                            break
+                        release_lock(r, lock_name, arm_product_lock)
+                    else:
+                        arm_key_all.insert(4,arm_id)
     #訂單商品處理結束
     r.delete(workstation_id+"open")
                     
