@@ -17,6 +17,14 @@ import redis
 import json
 import pymongo
 
+def find_empty_arms_sid_num_db_create(storage_dict, arm_id):
+    ##在arm_id找一個可以擺container的sid數量
+    num = 0
+    for k,v in storage_dict.items():
+        if v["arm_id"] == arm_id and v["container_id"] == "":
+            num += 1
+    return num
+
 file = "yahoo_order_info.xlsx"
 yahoo_order_record = pd.read_excel(file , dtype=str)
 yahoo_order_record['日期'] = yahoo_order_record['日期'].astype(int).astype(str)
@@ -122,20 +130,25 @@ for si in storage_all_key_list:
 random.shuffle (storage_0_list)
 random.shuffle (storage_1_list)
 
-
+i = 0
 for k,v in container_dict.items():
     if len(storage_0_list)>0:
         storage_id = storage_0_list.pop()
     else:
         storage_id = storage_1_list.pop()
-    storage_id_eval  = eval(storage_id)
+        arm_id = storage_dict[storage_id]['arm_id']
+        empty_num = find_empty_arms_sid_num_db_create(storage_dict, arm_id)
+        if empty_num == 1:
+            continue
+    storage_id_eval  = eval(storage_id) 
     container_dict[k]["grid"] = storage_id_eval[0]
     container_dict[k]["relative_coords"] = {"rx" : storage_id_eval[1][0],
                                             "ry" : storage_id_eval[1][0],
                                             "rz" : storage_id_eval[1][0]}
     storage_dict[storage_id]["container_id"] = k
     storage_dict[storage_id]["contents"] = container_dict[k]["contents"]
-
+    i+=1
+    print(i)
     
 
 
@@ -144,9 +157,14 @@ uri = "mongodb+srv://liyiliou:liyiliou@cluster-yahoo-1.5gjuk.mongodb.net/Cluster
 client = pymongo.MongoClient(uri)
 db = client['ASRS-Cluster-0']
 warehouse_db = db["Warehouses"]
-container_db = db["Container_0201"]
-storage_db = db["Storages_0201"]
-product_db = db["Products_0201"]
+container_db = db["Containers"]
+storage_db = db["Storages"]
+product_db = db["Products"]
+
+#warehouse_db_cp = db["Warehouses_copy"]
+container_db_cp = db["Containers_copy"]
+storage_db_cp = db["Storages_copy"]
+product_db_cp = db["Products_copy"]
 
 ite = 0
 for k,v in product_dict.items():
@@ -159,6 +177,7 @@ for k,v in product_dict.items():
                            "turnover" : v["turnover"],
                            "volume" : v["volume"]}} 
     product_db.update_one(myquery, newvalues, upsert=True)
+    product_db_cp.update_one(myquery, newvalues, upsert=True)
     ite += 1
 
 
@@ -174,6 +193,8 @@ for k,v in container_dict.items():
                            "turnover" : v["turnover"],
                            "used_volume" : 0}} 
     container_db.update_one(myquery, newvalues, upsert=True)
+    container_db_cp.update_one(myquery, newvalues, upsert=True)
+
     ite += 1
 
 ite = 0
@@ -182,8 +203,15 @@ for k,v in storage_dict.items():
     myquery = { "storage_id": str(k) }
     newvalues = { "$set": {"storage_id": str(k),
                            "container_id":v["container_id"],
-                           "contents":v["contents"]}} 
+                           "contents":v["contents"],
+                           "arm_id":v["arm_id"],
+                           "grid_id":v["grid_id"],
+                           "relative_coords":v["relative_coords"],
+                           "coordinates":v["coordinates"]
+                           }} 
     storage_db.update_one(myquery, newvalues, upsert=True)
+    storage_db_cp.update_one(myquery, newvalues, upsert=True)
+
     ite += 1
 
 
