@@ -103,6 +103,7 @@ def order_pick(self, workstation_id):
     ws = workstation_db.find_one({'workstation_id':workstation_id})
     ws_works = ws["work"]
     #工作站內的剩餘訂單與訂單還未撿取的商品列表
+    
     ordr_l = []
     ws_order_prd = []
     for order_i,works_value in ws_works.items():
@@ -111,6 +112,7 @@ def order_pick(self, workstation_id):
         for prd,qt in works_value["prd"].items():
             order_unpick[prd] = qt["qt"]
         ws_order_prd.append(order_unpick)
+    # print("in order pick order set : "+str(ordr_l))
     # ordr_l = eval(ordr_l_s)
     #訂單串的商品集合 
     # ws_order_prd = order_product(ordr_l)
@@ -156,6 +158,7 @@ def order_pick(self, workstation_id):
                             #container 放入 工作站內指定訂單中
                             for bundle_pid in container_bundle:
                                 pid_order_dict = prd_content[bundle_pid]["order"]
+                                print("pid: "+str(bundle_pid)+"  order: "+str(pid_order_dict))
                                 pid_pick_order_list = []
                                 for order_id,pqt in pid_order_dict.items():
                                     #若container內pid商品數量還夠
@@ -165,6 +168,8 @@ def order_pick(self, workstation_id):
                                         #訂單商品pid數量檢出
                                         prd_qt -= pqt
                                         #工作站增加要撿取之container與商品pid資訊
+                                        print("order pick order id: "+str(order_id)+" container_id: "+str(container_id)+" pid: "+
+                                              str(bundle_pid)+" qt: "+str(pqt))
                                         workstation_addpick(order_id,container_id,bundle_pid,pqt)
                                         pid_pick_order_list.append(order_id)
                                 #將檢出的被訂單刪除
@@ -179,7 +184,7 @@ def order_pick(self, workstation_id):
                             redis_data_update(arm_id,value)
                             release_lock(r, lock_name, arm_product_lock)
                             
-                            print(oi,arm_id,layer,pid,container_id)
+                            print("oi: "+str(oi)+" arm_id: "+str(arm_id)+" layer: "+str(layer)+" pid: "+str(pid)+" container_id: "+container_id)
                             #改container_db狀態
                             container_waiting(container_id)
                             arms_work_transmit.delay(arm_id)
@@ -189,6 +194,7 @@ def order_pick(self, workstation_id):
                     else:
                         arm_key_all.insert(4,arm_id)
     #訂單商品處理結束
+    print("order pick finished wait next task")
     r.delete(workstation_id+"open")
                     
                         
@@ -248,33 +254,32 @@ def workstation_open(self, workstation_id,index_label,index,num):
                 #取得失敗
                 if order_lock != False:
                     #分配訂單
-                    test = order_assign(index_label,index,num)
-                    print(test)
                     order_l = str(order_assign(index_label,index,num))
+                    print("分配訂單為："+order_l)
                     print("訂單池給予訂單")
                     order_l_eval = eval(order_l)
                     #釋放訂單池ＤＢ
                     release_lock(r, lock_name, order_lock)
                     workstation_newwork_prd(workstation_id,order_l_eval)
-                    print("工作站id: ",workstation_id," 撿取訂單項目輸入完成")
-                    print("工作站id: ",workstation_id," 撿取開始")
+                    print("工作站id: "+str(workstation_id)+" 撿取訂單項目輸入完成")
+                    print("工作站id: "+str(workstation_id)+" 撿取開始")
                     #訂單商品選取撿出container號
                     order_pick.delay(workstation_id)
                     #workstation_open.delay(workstation_id,index_label,index,num)
             else:
-                print("工作站id: ",workstation_id," 還有訂單")
+                print("工作站id: "+str(workstation_id)+" 還有訂單")
                 # order_l = workstation_order(workstation_id)
-                print("工作站id: ",workstation_id," 撿取開始")
+                print("工作站id: "+str(workstation_id)+" 撿取開始")
                 order_pick.delay(workstation_id)
                 #workstation_open.delay(workstation_id,index_label,index,num)
         else:
             print("訂單池沒有訂單")
             r.delete(workstation_id+"open")
     else:
-        print("工作站id: ",workstation_id,"調配商品中")
+        print("工作站id: "+str(workstation_id)+"調配商品中")
         if workstation_free(workstation_id):
             r.delete(workstation_id+"open")
-            print("工作站id: ",workstation_id," 完成 補新訂單")
+            print("工作站id: "+str(workstation_id)+" 完成 補新訂單")
         #workstation_open.delay(workstation_id,index_label,index,num)
 '''
 workstation_tasks
@@ -298,7 +303,7 @@ def arms_store(self, container_id,arm_id):
     container_db = db["Containers"]
     storage_db = db["Storages"]
     #找arm_id上的可放入的空格
-    print("container_id",container_id,"arm_id",arm_id)
+    print("arms_store container_id: "+str(container_id)+" arm_id: "+str(arm_id))
     arm_id = str(arm_id)
     storage_id = find_empty_arms_sid(arm_id)
     #storage＿id 放入 container_id
@@ -432,24 +437,25 @@ def workstation_get(self, container_id):
     # 工作站收到container
     container_set_status(container_id,'in_workstation')
 
-def order_check(self, workstation_id, order_id):
-    uri = "mongodb+srv://liyiliou:liyiliou@cluster-yahoo-1.5gjuk.mongodb.net/Cluster-Yahoo-1?retryWrites=true&w=majority"
-    try:
-        client = pymongo.MongoClient(uri)
-        db = client['ASRS-Cluster-0']
-    except:
-        Sigkill_func(self.request.id)
-    workstation_db = db["Workstations"]
-    workstation_info = workstation_db.find({'workstation_id':workstation_id})
-    for ws_i in workstation_info:
-        ws_work = ws_i['work']
-    if ws_work[order_id]["prd"] == {}:
-        return True
-    else:
-        return False
+# def order_check(self, workstation_id, order_id):
+#     uri = "mongodb+srv://liyiliou:liyiliou@cluster-yahoo-1.5gjuk.mongodb.net/Cluster-Yahoo-1?retryWrites=true&w=majority"
+#     try:
+#         client = pymongo.MongoClient(uri)
+#         db = client['ASRS-Cluster-0']
+#     except:
+#         Sigkill_func(self.request.id)
+#     workstation_db = db["Workstations"]
+#     workstation_info = workstation_db.find({'workstation_id':workstation_id})
+#     for ws_i in workstation_info:
+#         ws_work = ws_i['work']
+#     if ws_work[order_id]["prd"] == {}:
+#         return True
+#     else:
+#         return False
     
 @OFAI_Celery_func.task(bind=True)
-def workstation_workend(self, workstation_id,order):
+def workstation_workend(self, workstation_id,order_id):
+    print("In workstation workend workstation_id: "+workstation_id+" order_id: "+order_id)
     r = redis.Redis(host='localhost', port=6379, decode_responses=False)
     r.set("celery-task-meta-" + self.request.id, self.request.id)
     #工作站檢取完後 刪除工作
@@ -461,7 +467,7 @@ def workstation_workend(self, workstation_id,order):
         db = client['ASRS-Cluster-0']
         
     except:
-        workstation_workend.delay(workstation_id, order)
+        workstation_workend.delay(workstation_id, order_id)
         Sigkill_func(self.request.id)
         return True
     workstation_db = db["Workstations"]
@@ -474,7 +480,7 @@ def workstation_workend(self, workstation_id,order):
     newvalues = { "$set": {"workloads":ws_workloads}}
     workstation_db.update(myquery,newvalues)
     #刪訂單
-    newvalues = { "$unset": {"work."+order:{}}}
+    newvalues = { "$unset": {"work."+order_id:{}}}
     workstation_db.update(myquery,newvalues)
     if workstation_free(workstation_id):
         with open('參數檔.txt') as f:
@@ -488,10 +494,17 @@ def workstation_workend(self, workstation_id,order):
 def container_operate(self, container_id):
     r = redis.Redis(host='localhost', port=6379, decode_responses=False)
     r.set("celery-task-meta-" + self.request.id, self.request.id)
+    #工作站收到container_id
     workstation_get.delay(container_id)
-    order_id, workstation_id = workstation_pick(container_id)
-    if order_check(workstation_id, order_id):
-        workstation_workend.delay(workstation_id, order_id)
+    #工作站撿取container_id需求內容物
+    order_id_list_str, workstation_id = workstation_pick(container_id)
+    order_id_list = eval(order_id_list_str)
+    #依序判斷order_list內的order_id是否完成
+    for order_id in order_id_list:
+        if order_check(workstation_id, order_id):
+            print("workstation_id: "+str(workstation_id)+" finished order: "+str(order_id))
+            workstation_workend.delay(workstation_id, order_id)
+    #選擇放回去的arm_id
     arm_id = container_putback(container_id)
     oi = get_time_string()
     value = (0,oi,0,container_id)
