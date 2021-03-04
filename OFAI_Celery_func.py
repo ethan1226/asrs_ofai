@@ -132,7 +132,7 @@ def order_pick(self, workstation_id):
     
     while len(prd_list)>0:
         pid = prd_list[0]
-        print("剩餘訂單商品數量: "+str(len(prd_list))+" 準備撿取pid: "+str(pid))
+        print("workstation id: "+str(workstation_id)+" 剩餘訂單商品數量: "+str(len(prd_list))+" 準備撿取pid: "+str(pid))
         oi = get_time_string()
         numbering = 0
         prd_qt = prd_content[pid]["qt"]
