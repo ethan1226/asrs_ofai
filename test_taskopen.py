@@ -5,7 +5,15 @@ Created on Thu Jan 21 16:55:35 2021
 
 @author: huangboyu
 """
+
+'''
+開啟celery指令
+celery -A OFAI_Celery_func worker --loglevel=info
+開啟redis指令
+redis-server
+'''
 from utils.scheduling_utils_db import *
+import celery 
 from OFAI_Celery_func import workstation_open ,order_pick,container_operate,arms_store,arms_pick,workstation_get,workstation_workend,order_check,arms_work_transmit
 def Celery_all_tasks_delete():
     r = redis.Redis(host='localhost', port=6379, decode_responses=False)
