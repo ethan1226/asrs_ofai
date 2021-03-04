@@ -171,8 +171,8 @@ def order_pick(self, workstation_id):
                                         #訂單商品pid數量檢出
                                         prd_qt -= pqt
                                         #工作站增加要撿取之container與商品pid資訊
-                                        print("order picked order id: "+str(order_id)+" container_id: "+str(container_id)+" pid: "+
-                                              str(bundle_pid)+" qt: "+str(pqt))
+                                        print("order picked order id: "+str(order_id)+" container_id: "+str(container_id)+
+                                              " pid: " + str(bundle_pid)+" qt: "+str(pqt))
                                         workstation_addpick(order_id,container_id,bundle_pid,pqt)
                                         pid_pick_order_list.append(order_id)
                                 #將檢出的被訂單刪除
@@ -419,8 +419,10 @@ def arms_work_transmit(self, arm_id):
     判斷是要撿取還是存取container並執行
     '''
     if container_info[0] == 1:
+        print("arms pick container id: "+str(container_info[3]))
         arms_pick.delay(container_info[3])
     else:
+        print("arms store container id: "+str(container_info[3])+" on arm id: "+str(arm_id))
         arms_store.delay(container_info[3],arm_id)
     
     '''
