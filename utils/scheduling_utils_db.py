@@ -1387,7 +1387,7 @@ def workstation_addpick(order_id,container_id,prd,pqt):
     insert_pick[container_id] = {prd:pqt}
     ws_work[order_id]["container"].update(insert_pick)
     myquery = { "workstation_id": workstation_id }
-    newvalues = { "$set": { "work."+order_id+".container": ws_work[order_id]["container"]}}
+    newvalues = { "$set": { "work."+order_id+".container."+container_id:{prd:pqt}}}
     workstation_db.update(myquery,newvalues)
 def workstation_get(container_id):
     # 工作站收到container
@@ -1428,27 +1428,30 @@ def workstation_pick(container_id):
         # print("in workstation_pick contaioner_id : ",container_id," w_1: ",w_1)
         ws_work = w_1['work']
         workstation_id = w_1['workstation_id']
-    # print("in workstation_pick contaioner_id : ",container_id," ws_work: ",ws_work)
+    # 找有哪些訂單有container
     output_order_id_list = []
     for order_id,order_pickup in ws_work.items():
         for pick_container_id in order_pickup["container"]:
             if container_id == pick_container_id:
                 #找出container在哪些張訂單號
                 output_order_id_list.append(order_id)
-    #刪除 container內要撿的商品
+    #刪除 container內要撿的商品並更新db
+    myquery = { "workstation_id": workstation_id}
     for output_order_id in output_order_id_list:
         for prd,pqt in ws_work[output_order_id]["container"][container_id].items():
             ws_work[output_order_id]["prd"][prd]["qt"] -= pqt
-            #需求量撿完刪除訂單商品
+            newvalues = { "$inc": { "work."+output_order_id+".prd."+prd+".qt":-pqt}}
+            #需求量撿完刪除訂單商品並更新db
             if ws_work[output_order_id]["prd"][prd]["qt"] == 0:
                 ws_work[output_order_id]["prd"].pop(prd,None)
-    #撿完container後刪除
+                newvalues = { "$unset": { "work."+output_order_id+".prd."+prd:""}}
+                workstation_db.update(myquery,newvalues)
+            else:
+                workstation_db.update(myquery,newvalues)
+    #撿完container後刪除並更新db
     for output_order_id in output_order_id_list:
         ws_work[output_order_id]["container"].pop(container_id,None)
-    #更新db
-    for output_order_id in output_order_id_list:
-        myquery = { "workstation_id": workstation_id}
-        newvalues = { "$set": { "work."+output_order_id: ws_work[output_order_id]}}
+        newvalues = { "$unset": { "work."+output_order_id+".container."+container_id:""}}
         workstation_db.update(myquery,newvalues)
     #TODO container送回倉
     print(" workstation_id: "+workstation_id+" order_id: "+str(output_order_id_list))
