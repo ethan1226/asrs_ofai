@@ -1,0 +1,5 @@
+{
+	"index_label":"date",
+	"index":"20200703",
+	"num":20
+}
