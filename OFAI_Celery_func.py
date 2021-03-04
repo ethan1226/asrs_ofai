@@ -109,8 +109,8 @@ def order_pick(self, workstation_id):
     for order_i,works_value in ws_works.items():
         ordr_l.append(order_i)
         order_unpick = {}
-        for prd,qt in works_value["prd"].items():
-            order_unpick[prd] = qt["qt"]
+        for pid,qt in works_value["prd"].items():
+            order_unpick[pid] = qt["qt"]
         ws_order_prd.append(order_unpick)
     # print("in order pick order set : "+str(ordr_l))
     # ordr_l = eval(ordr_l_s)
@@ -122,13 +122,13 @@ def order_pick(self, workstation_id):
     prd_list = []
     prd_content = {}
     for order_index,order_content in enumerate(ws_order_prd):
-        for prd,pqt in order_content.items():
-            if prd not in prd_content:
-                prd_list.append(prd)
-                prd_content[prd] = {"qt":pqt,"order":{ordr_l[order_index]:pqt}}
+        for pid,pqt in order_content.items():
+            if pid not in prd_content:
+                prd_list.append(pid)
+                prd_content[pid] = {"qt":pqt,"order":{ordr_l[order_index]:pqt}}
             else:
-                prd_content[prd]["qt"] += pqt
-                prd_content[prd]["order"].update({ordr_l[order_index]:pqt})
+                prd_content[pid]["qt"] += pqt
+                prd_content[pid]["order"].update({ordr_l[order_index]:pqt})
     
     while len(prd_list)>0:
         pid = prd_list[0]
@@ -159,6 +159,7 @@ def order_pick(self, workstation_id):
                             arm_id = container_armid(container_id)
                             #container 放入 工作站內指定訂單中
                             for bundle_pid in container_bundle:
+                                # pid :bundle_pid 之訂單內容
                                 pid_order_dict = prd_content[bundle_pid]["order"]
                                 print("pid: "+str(bundle_pid)+"  order: "+str(pid_order_dict))
                                 pid_pick_order_list = []
@@ -170,7 +171,7 @@ def order_pick(self, workstation_id):
                                         #訂單商品pid數量檢出
                                         prd_qt -= pqt
                                         #工作站增加要撿取之container與商品pid資訊
-                                        print("order pick order id: "+str(order_id)+" container_id: "+str(container_id)+" pid: "+
+                                        print("order picked order id: "+str(order_id)+" container_id: "+str(container_id)+" pid: "+
                                               str(bundle_pid)+" qt: "+str(pqt))
                                         workstation_addpick(order_id,container_id,bundle_pid,pqt)
                                         pid_pick_order_list.append(order_id)
@@ -196,7 +197,7 @@ def order_pick(self, workstation_id):
                     else:
                         arm_key_all.insert(4,arm_id)
             else:
-                print("商品搜尋完畢")
+                print("商品: "+str(pid)+" 搜尋完畢")
     #訂單商品處理結束
     print("order pick finished wait next task")
     r.delete(workstation_id+"open")
@@ -252,7 +253,7 @@ def workstation_open(self, workstation_id,index_label,index,num):
             print("訂單池還有訂單")
             #工作站是否還有工作
             if workstation_free(workstation_id):
-                print("工作站id: ",workstation_id," 沒有訂單")
+                print("工作站id: "+str(workstation_id)+" 沒有訂單")
                 #取得訂單池ＤＢ鑰匙
                 order_lock = acquire_lock_with_timeout(r,lock_name, acquire_timeout=3, lock_timeout=30)
                 #取得失敗
