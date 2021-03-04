@@ -35,8 +35,13 @@ for key in all_keys_b:
     r.delete(key)
 redis_init()
 redis_arm_product_update()
-workstation_id = "ws_1"
-index_label = "date"
-index = "20200701"
-num = 20
+with open('參數檔.txt') as f:
+    json_data = json.load(f)
+index_label = json_data["index_label"]
+index = json_data["index"]
+num = json_data["num"]
+workstation_id = "ws_2"
+# index_label = "date"
+# index = "20200701"
+# num = 20
 workstation_open.delay(workstation_id,index_label,index,num)
