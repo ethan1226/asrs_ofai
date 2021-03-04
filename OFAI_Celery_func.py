@@ -132,12 +132,14 @@ def order_pick(self, workstation_id):
     
     while len(prd_list)>0:
         pid = prd_list[0]
+        print("剩餘訂單商品數量: "+str(len(prd_list))+" 準備撿取pid: "+str(pid))
         oi = get_time_string()
         numbering = 0
         prd_qt = prd_content[pid]["qt"]
         isbreak = False
         #先找外層再找內層
         for layer in range(1,-1,-1):
+            print("搜尋 "+str(layer)+" 層")
             if not isbreak:
                 #排序機器手臂工作量
                 arm_key_all = copy.deepcopy(arm_key_list) 
@@ -193,6 +195,8 @@ def order_pick(self, workstation_id):
                         release_lock(r, lock_name, arm_product_lock)
                     else:
                         arm_key_all.insert(4,arm_id)
+            else:
+                print("商品搜尋完畢")
     #訂單商品處理結束
     print("order pick finished wait next task")
     r.delete(workstation_id+"open")
