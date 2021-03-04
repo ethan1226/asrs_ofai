@@ -487,6 +487,7 @@ def order_pick3(self, workstation_id):
     client = pymongo.MongoClient(uri)
     db = client['ASRS-Cluster-0']
     workstation_db = db["Workstations"]
+    container_db = db["Containers"]
     ws = workstation_db.find_one({'workstation_id':workstation_id})
     ws_works = ws["work"]
     #工作站內的剩餘訂單與訂單還未撿取的商品列表
@@ -1371,22 +1372,22 @@ def workstation_newwork_prd(workstation_id,order_l):
 #     myquery = { "workstation_id": workstation_id }
 #     newvalues = { "$set": { "work": ws_work}}
 #     workstation_db.update(myquery,newvalues)
-def workstation_addpick(order,container_id,prd,pqt):
+def workstation_addpick(order_id,container_id,prd,pqt):
     #指派order 撿取container的contents與數量
     uri = "mongodb+srv://liyiliou:liyiliou@cluster-yahoo-1.5gjuk.mongodb.net/Cluster-Yahoo-1?retryWrites=true&w=majority"
     client = pymongo.MongoClient(uri)
     db = client['ASRS-Cluster-0']
     workstation_db = db["Workstations"]
     work_info = workstation_db.aggregate([
-                     {'$match': { 'work.'+order:{'$exists':"true"}}}])
+                     {'$match': { 'work.'+order_id:{'$exists':"true"}}}])
     for ws_i in work_info:
         workstation_id = ws_i["workstation_id"]
         ws_work = ws_i['work']
     insert_pick = {}
     insert_pick[container_id] = {prd:pqt}
-    ws_work[order]["container"].update(insert_pick)
+    ws_work[order_id]["container"].update(insert_pick)
     myquery = { "workstation_id": workstation_id }
-    newvalues = { "$set": { "work."+order+".container": ws_work[order]["container"]}}
+    newvalues = { "$set": { "work."+order_id+".container": ws_work[order_id]["container"]}}
     workstation_db.update(myquery,newvalues)
 def workstation_get(container_id):
     # 工作站收到container
@@ -1424,10 +1425,10 @@ def workstation_pick(container_id):
                          {'$match': { 'workTransformed.v.container.'+container_id: {'$exists':1} }}
                                      ])
     for w_1 in work_info:
-        print("in workstation_pick contaioner_id : ",container_id," w_1: ",w_1)
+        # print("in workstation_pick contaioner_id : ",container_id," w_1: ",w_1)
         ws_work = w_1['work']
         workstation_id = w_1['workstation_id']
-    print("in workstation_pick contaioner_id : ",container_id," ws_work: ",ws_work)
+    # print("in workstation_pick contaioner_id : ",container_id," ws_work: ",ws_work)
     output_order_id_list = []
     for order_id,order_pickup in ws_work.items():
         for pick_container_id in order_pickup["container"]:
@@ -1450,11 +1451,13 @@ def workstation_pick(container_id):
         newvalues = { "$set": { "work."+output_order_id: ws_work[output_order_id]}}
         workstation_db.update(myquery,newvalues)
     #TODO container送回倉
-    return output_order_id,workstation_id
+    print(" workstation_id: "+workstation_id+" order_id: "+str(output_order_id_list))
+    return str(output_order_id_list),workstation_id
     
 
-def workstation_workend(workstation_id,order):
+def workstation_workend(workstation_id,order_id):
     #工作站檢取完後 刪除工作
+    print("In workstation workend workstation_id: "+workstation_id+" order_id: "+order_id)
     uri = "mongodb+srv://liyiliou:liyiliou@cluster-yahoo-1.5gjuk.mongodb.net/Cluster-Yahoo-1?retryWrites=true&w=majority"
     client = pymongo.MongoClient(uri)
     db = client['ASRS-Cluster-0']
@@ -1468,7 +1471,7 @@ def workstation_workend(workstation_id,order):
     newvalues = { "$set": {"workloads":ws_workloads}}
     workstation_db.update(myquery,newvalues)
     #刪訂單
-    newvalues = { "$unset": {"work."+order:{}}}
+    newvalues = { "$unset": {"work."+order_id:{}}}
     workstation_db.update(myquery,newvalues)
     
 
