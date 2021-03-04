@@ -973,12 +973,12 @@ def product_push_container(container_id):
     container_info = container_db.find({"container_id":container_id})
     for c_i in container_info:
         contents = c_i['contents']
-    for k,v in contents.items():
-        product_info = product_db.find_one({"product_name":k})
+    for pid,pqt in contents.items():
+        product_info = product_db.find_one({"product_name":pid})
         product_container = product_info["container"]
-        product_container.update({k:v})
+        product_container.update({container_id:pqt})
         product_qt = sum(product_container.values())
-        myquery = { "product_name": k }
+        myquery = { "product_name": pid }
         newvalues = { "$set": { "container": product_container,"quantity": product_qt} }
         product_db.update_one(myquery, newvalues)
 
@@ -986,7 +986,7 @@ def product_pop_container(container_id):
     #將product有container_id的商品扣掉 container_id 並更新數量
     uri = "mongodb+srv://liyiliou:liyiliou@cluster-yahoo-1.5gjuk.mongodb.net/Cluster-Yahoo-1?retryWrites=true&w=majority"
     client = pymongo.MongoClient(uri)
-    db = client['ASRS-Cluster-0']##找一個空的grid
+    db = client['ASRS-Cluster-0']
     product_dict = db["Products"]
     #找有container_id的商品
     find_container_id = "container." + container_id
