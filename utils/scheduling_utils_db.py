@@ -1625,7 +1625,7 @@ def redis_dict_all_keys():
     all_keys_b = r.keys()
     all_keys = []
     for key in all_keys_b:
-        if "(" in key.decode("utf-8")and "_pid"not in key.decode("utf-8"):
+        if "(" in key.decode("utf-8")and "_pid"not in key.decode("utf-8")and "_arm2transmit"not in key.decode("utf-8")and "lock"not in key.decode("utf-8") :
             all_keys.append(key.decode("utf-8"))
     return all_keys
 
