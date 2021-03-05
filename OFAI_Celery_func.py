@@ -401,7 +401,7 @@ def arms_work_transmit(self, arm_id):
     取手臂鎖
     '''
     conn = redis.Redis(host='localhost', port=6379, decode_responses=False)  
-    lock_name = arm_id
+    lock_name = arm_id+ "_arm2transmit"
     lock_val = 1
     while lock_val:
         lock_id = acquire_lock_with_timeout(conn, lock_name, acquire_timeout= 2, lock_timeout= 100)
