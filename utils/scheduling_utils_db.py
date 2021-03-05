@@ -381,9 +381,9 @@ def order_pick(workstation_id):
     #訂單商品處理結束
     r.delete(workstation_id+"open")
 
-def order_pick_2(workstation_id):
-    #依訂單商品先合併商品資訊 找到適當的container放入工作站
+def order_pick(self, workstation_id):
     r = redis.Redis(host='localhost', port=6379, decode_responses=False)
+    r.set("celery-task-meta-" + self.request.id, self.request.id)
     uri = "mongodb+srv://liyiliou:liyiliou@cluster-yahoo-1.5gjuk.mongodb.net/Cluster-Yahoo-1?retryWrites=true&w=majority"
     client = pymongo.MongoClient(uri)
     db = client['ASRS-Cluster-0']
@@ -391,14 +391,16 @@ def order_pick_2(workstation_id):
     ws = workstation_db.find_one({'workstation_id':workstation_id})
     ws_works = ws["work"]
     #工作站內的剩餘訂單與訂單還未撿取的商品列表
+    
     ordr_l = []
     ws_order_prd = []
     for order_i,works_value in ws_works.items():
         ordr_l.append(order_i)
         order_unpick = {}
-        for prd,qt in works_value["prd"].items():
-            order_unpick[prd] = qt["qt"]
+        for pid,qt in works_value["prd"].items():
+            order_unpick[pid] = qt["qt"]
         ws_order_prd.append(order_unpick)
+    # print("in order pick order set : "+str(ordr_l))
     # ordr_l = eval(ordr_l_s)
     #訂單串的商品集合 
     # ws_order_prd = order_product(ordr_l)
@@ -408,22 +410,24 @@ def order_pick_2(workstation_id):
     prd_list = []
     prd_content = {}
     for order_index,order_content in enumerate(ws_order_prd):
-        for prd,pqt in order_content.items():
-            if prd not in prd_content:
-                prd_list.append(prd)
-                prd_content[prd] = {"qt":pqt,"order":{ordr_l[order_index]:pqt}}
+        for pid,pqt in order_content.items():
+            if pid not in prd_content:
+                prd_list.append(pid)
+                prd_content[pid] = {"qt":pqt,"order":{ordr_l[order_index]:pqt}}
             else:
-                prd_content[prd]["qt"] += pqt
-                prd_content[prd]["order"].update({ordr_l[order_index]:pqt})
+                prd_content[pid]["qt"] += pqt
+                prd_content[pid]["order"].update({ordr_l[order_index]:pqt})
     
     while len(prd_list)>0:
         pid = prd_list[0]
+        print("workstation id: "+str(workstation_id)+" 剩餘訂單商品數量: "+str(len(prd_list))+" 準備撿取pid: "+str(pid))
         oi = get_time_string()
         numbering = 0
         prd_qt = prd_content[pid]["qt"]
         isbreak = False
         #先找外層再找內層
         for layer in range(1,-1,-1):
+            print("搜尋 "+str(layer)+" 層")
             if not isbreak:
                 #排序機器手臂工作量
                 arm_key_all = copy.deepcopy(arm_key_list) 
@@ -443,7 +447,9 @@ def order_pick_2(workstation_id):
                             arm_id = container_armid(container_id)
                             #container 放入 工作站內指定訂單中
                             for bundle_pid in container_bundle:
+                                # pid :bundle_pid 之訂單內容
                                 pid_order_dict = prd_content[bundle_pid]["order"]
+                                print("pid: "+str(bundle_pid)+"  order: "+str(pid_order_dict))
                                 pid_pick_order_list = []
                                 for order_id,pqt in pid_order_dict.items():
                                     #若container內pid商品數量還夠
@@ -453,6 +459,8 @@ def order_pick_2(workstation_id):
                                         #訂單商品pid數量檢出
                                         prd_qt -= pqt
                                         #工作站增加要撿取之container與商品pid資訊
+                                        print("order picked order id: "+str(order_id)+" container_id: "+str(container_id)+
+                                              " pid: " + str(bundle_pid)+" qt: "+str(pqt))
                                         workstation_addpick(order_id,container_id,bundle_pid,pqt)
                                         pid_pick_order_list.append(order_id)
                                 #將檢出的被訂單刪除
@@ -467,7 +475,7 @@ def order_pick_2(workstation_id):
                             redis_data_update(arm_id,value)
                             release_lock(r, lock_name, arm_product_lock)
                             
-                            print(oi,arm_id,layer,pid,container_id)
+                            print("oi: "+str(oi)+" arm_id: "+str(arm_id)+" layer: "+str(layer)+" pid: "+str(pid)+" container_id: "+container_id)
                             #改container_db狀態
                             container_waiting(container_id)
                             arms_work_transmit.delay(arm_id)
@@ -476,7 +484,10 @@ def order_pick_2(workstation_id):
                         release_lock(r, lock_name, arm_product_lock)
                     else:
                         arm_key_all.insert(4,arm_id)
+            else:
+                print("商品: "+str(pid)+" 搜尋完畢")
     #訂單商品處理結束
+    print("order pick finished wait next task")
     r.delete(workstation_id+"open")
     
 def order_pick3(self, workstation_id):
@@ -499,9 +510,6 @@ def order_pick3(self, workstation_id):
         for prd,qt in works_value["prd"].items():
             order_unpick[prd] = qt["qt"]
         ws_order_prd.append(order_unpick)
-    # ordr_l = eval(ordr_l_s)
-    #訂單串的商品集合 
-    # ws_order_prd = order_product(ordr_l)
     #排序機器手臂工作量
     arm_key_list = arm_work_sort_list()
     #依商品順序處理 內容包含數量與需求訂單
@@ -518,12 +526,14 @@ def order_pick3(self, workstation_id):
     
     while len(prd_list)>0:
         pid = prd_list[0]
+        print("workstation id: "+str(workstation_id)+" 剩餘訂單商品數量: "+str(len(prd_list))+" 準備撿取pid: "+str(pid))
         oi = get_time_string()
         numbering = 0
         prd_qt = prd_content[pid]["qt"]
         isbreak = False
         #內外層搜尋
         for layer in range(1,-1,-1):
+            print("搜尋 "+str(layer)+" 層")
             #是否已找到商品container
             if not isbreak:
                 #找有pid的container 在layer層
@@ -550,6 +560,7 @@ def order_pick3(self, workstation_id):
                             arm_id = container_choosed[1]
                             for bundle_pid in container_bundle:
                                 pid_order_dict = prd_content[bundle_pid]["order"]
+                                print("pid: "+str(bundle_pid)+"  order: "+str(pid_order_dict))
                                 pid_pick_order_list = []
                                 for order_id,pqt in pid_order_dict.items():
                                     #若container內pid商品數量還夠
@@ -559,6 +570,8 @@ def order_pick3(self, workstation_id):
                                         #訂單商品pid數量檢出
                                         prd_qt -= pqt
                                         #工作站增加要撿取之container與商品pid資訊
+                                        print("order picked order id: "+str(order_id)+" container_id: "+str(container_id)+
+                                              " pid: " + str(bundle_pid)+" qt: "+str(pqt))
                                         workstation_addpick(order_id,container_id,bundle_pid,pqt)
                                         pid_pick_order_list.append(order_id)
                                 #將撿出的被訂單刪除
@@ -571,13 +584,17 @@ def order_pick3(self, workstation_id):
                             numbering += 1
                             #更新對應redis
                             redis_data_update(arm_id,value)
-                            print(oi,arm_id,layer,pid,container_id)
+                            print("oi: "+str(oi)+" arm_id: "+str(arm_id)+" layer: "+str(layer)+" pid: "+str(pid)+" container_id: "+container_id)
                             arms_work_transmit.delay(arm_id)
                         if pid not in prd_list:
                             isbreak = True
                             break
+            else:
+                print("商品: "+str(pid)+" 搜尋完畢")
     #訂單商品處理結束
-    r.delete(workstation_id+"open")                     
+    print("order pick finished wait next task")
+    r.delete(workstation_id+"open")
+              
 
 def order_check(workstation_id, order_id):
     uri = "mongodb+srv://liyiliou:liyiliou@cluster-yahoo-1.5gjuk.mongodb.net/Cluster-Yahoo-1?retryWrites=true&w=majority"
