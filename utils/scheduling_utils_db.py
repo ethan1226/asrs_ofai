@@ -2076,7 +2076,44 @@ def redis_data_update(key,value,layer):
         one_dict["works"].put(value)
     r.set(key,dill.dumps(one_dict))
 
-
+def redis_data_interchange(src_storage_id,dst_storage_id,container_id):
+    with open('參數檔.txt') as f:
+        json_data = json.load(f)
+    uri = json_data["uri"]    
+    r = redis.Redis(host='localhost', port=6379, decode_responses=False)
+    try:
+        client = pymongo.MongoClient(uri)
+        db = client['ASRS-Cluster-0']
+    except:
+        Sigkill_func(self.request.id)
+    container_db = db["Containers"]
+    storage_db = db["Storages"]
+    container_content = container_db.find_one({"container_id":container_id})['contents']
+    arm_id = storage_db.find_one({"storage_id":src_storage_id})['arm_id']
+    src_storage_id_eval = eval(src_storage_id)
+    dst_storage_id_eval = eval(dst_storage_id)
+    layer_src = src_storage_id_eval[1][0]
+    layer_dst = dst_storage_id_eval[1][0]
+    one_dict = {}
+    content = r.get(arm_id)
+    if content != None:
+        one_dict = dill.loads(content)
+        #刪除 redis裡面的機器手臂可撿商品資訊
+        pop_k = []
+        for pid,pid_container_qt in one_dict[layer_src].items():
+            for pid_container,pid_qt in pid_container_qt.items():
+                if container_id == pid_container:
+                    pop_k.append(pid)
+        for pid_pop in pop_k:
+            one_dict[layer_src][pid_pop].pop(container_id)
+            if one_dict[layer_src][pid_pop] == {}:
+                one_dict[layer_src].pop(pid_pop)
+        for content_k,content_v in container_content.items():
+            if content_k in one_dict[layer_dst]:
+                one_dict[layer_dst][content_k].update({container_id:content_v})
+            else:
+                one_dict[layer_dst][content_k] = {container_id:content_v}
+    r.set(key,dill.dumps(one_dict))
     
 
 def redis_dict_get(key):
