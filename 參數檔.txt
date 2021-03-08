@@ -1,5 +1,8 @@
 {
 	"index_label":"date",
 	"index":"20200703",
-	"num":20
+	"num":20,
+	"uri":"mongodb+srv://liyiliou:liyiliou@cluster-yahoo-1.5gjuk.mongodb.net/Cluster-Yahoo-1?retryWrites=true&w=majority",
+	"uri_cloud": "mongodb+srv://liyiliou:liyiliou@cluster-yahoo-1.5gjuk.mongodb.net/Cluster-Yahoo-1?retryWrites=true&w=majority",
+	"uri_local": "mongodb://127.0.0.1:27017/?compressors=disabled&gssapiServiceName=mongodb"
 }
