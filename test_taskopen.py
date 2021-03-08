@@ -40,7 +40,7 @@ with open('參數檔.txt') as f:
 index_label = json_data["index_label"]
 index = json_data["index"]
 num = json_data["num"]
-workstation_id = "ws_2"
+workstation_id = "ws_1"
 # index_label = "date"
 # index = "20200701"
 # num = 20
