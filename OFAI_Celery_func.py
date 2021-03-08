@@ -28,7 +28,9 @@ def redis_arm_product_update(self):
     r = redis.Redis(host='localhost', port=6379, decode_responses=False)
     r.set("celery-task-meta-" + self.request.id, self.request.id)
     arm_product_ptr = {}
-    uri = "mongodb+srv://liyiliou:liyiliou@cluster-yahoo-1.5gjuk.mongodb.net/Cluster-Yahoo-1?retryWrites=true&w=majority"
+    with open('參數檔.txt') as f:
+        json_data = json.load(f)
+    uri = json_data["uri"]
     try:
         client = pymongo.MongoClient(uri)
         db = client['ASRS-Cluster-0']
@@ -67,7 +69,9 @@ def redis_arm_product_update(self):
         redis_dict_set(key,value)
 
 def order_assign(index_label,index,num):
-    uri = "mongodb+srv://liyiliou:liyiliou@cluster-yahoo-1.5gjuk.mongodb.net/Cluster-Yahoo-1?retryWrites=true&w=majority"
+    with open('參數檔.txt') as f:
+        json_data = json.load(f)
+    uri = json_data["uri"]
     try:
         client = pymongo.MongoClient(uri)
         db = client['ASRS-Cluster-0']
@@ -94,41 +98,40 @@ def order_assign(index_label,index,num):
 
 @OFAI_Celery_func.task(bind=True)
 def order_pick(self, workstation_id):
+    #依訂單商品先合併商品資訊 找到適當的container放入工作站
+    #搜尋方式從redis改成直接搜尋db
     r = redis.Redis(host='localhost', port=6379, decode_responses=False)
-    r.set("celery-task-meta-" + self.request.id, self.request.id)
-    uri = "mongodb+srv://liyiliou:liyiliou@cluster-yahoo-1.5gjuk.mongodb.net/Cluster-Yahoo-1?retryWrites=true&w=majority"
+    with open('參數檔.txt') as f:
+        json_data = json.load(f)
+    uri = json_data["uri"]
     client = pymongo.MongoClient(uri)
     db = client['ASRS-Cluster-0']
     workstation_db = db["Workstations"]
+    container_db = db["Containers"]
     ws = workstation_db.find_one({'workstation_id':workstation_id})
     ws_works = ws["work"]
     #工作站內的剩餘訂單與訂單還未撿取的商品列表
-    
     ordr_l = []
     ws_order_prd = []
     for order_i,works_value in ws_works.items():
         ordr_l.append(order_i)
         order_unpick = {}
-        for pid,qt in works_value["prd"].items():
-            order_unpick[pid] = qt["qt"]
+        for prd,qt in works_value["prd"].items():
+            order_unpick[prd] = qt["qt"]
         ws_order_prd.append(order_unpick)
-    # print("in order pick order set : "+str(ordr_l))
-    # ordr_l = eval(ordr_l_s)
-    #訂單串的商品集合 
-    # ws_order_prd = order_product(ordr_l)
     #排序機器手臂工作量
     arm_key_list = arm_work_sort_list()
-    #依商品順序處理
+    #依商品順序處理 內容包含數量與需求訂單
     prd_list = []
     prd_content = {}
     for order_index,order_content in enumerate(ws_order_prd):
-        for pid,pqt in order_content.items():
-            if pid not in prd_content:
-                prd_list.append(pid)
-                prd_content[pid] = {"qt":pqt,"order":{ordr_l[order_index]:pqt}}
+        for prd,pqt in order_content.items():
+            if prd not in prd_content:
+                prd_list.append(prd)
+                prd_content[prd] = {"qt":pqt,"order":{ordr_l[order_index]:pqt}}
             else:
-                prd_content[pid]["qt"] += pqt
-                prd_content[pid]["order"].update({ordr_l[order_index]:pqt})
+                prd_content[prd]["qt"] += pqt
+                prd_content[prd]["order"].update({ordr_l[order_index]:pqt})
     
     while len(prd_list)>0:
         pid = prd_list[0]
@@ -137,29 +140,34 @@ def order_pick(self, workstation_id):
         numbering = 0
         prd_qt = prd_content[pid]["qt"]
         isbreak = False
-        #先找外層再找內層
+        #內外層搜尋
         for layer in range(1,-1,-1):
             print("搜尋 "+str(layer)+" 層")
+            #是否已找到商品container
             if not isbreak:
-                #排序機器手臂工作量
-                arm_key_all = copy.deepcopy(arm_key_list) 
-                while len(arm_key_all) > 0:
-                    arm_id = arm_key_all[0]
-                    arm_key_all.remove(arm_id)
-                    #手臂是否有此商品ＩＤ
-                    lock_name = arm_id + "_pid"
-                    arm_product_lock = acquire_lock_with_timeout(r, lock_name, acquire_timeout=3, lock_timeout=30)
-                    if arm_product_lock != False:
-                        container_id = arm_product(arm_id,pid,layer)
-                        if container_id != "" :
-                            #若有
+                #找有pid的container 在layer層
+                container_candidates = container_db.aggregate([{"$match": { "relative_coords.rx":layer,
+                                                                            "contents."+pid:{'$exists':"true"},
+                                                                            "status":"in_grid"}}])
+                layer_container_workloads_list = []
+                #排序找到的container所在的arm workloads
+                for ci in container_candidates:
+                    arm_id = container_armid(ci["container_id"])
+                    layer_container_workloads_list.append([ci["container_id"],arm_id,arm_workloads(arm_id)])
+                layer_container_workloads_list_sort = sorted(layer_container_workloads_list, key=lambda s: s[2])
+                #若有適合的container則進行撿取
+                if layer_container_workloads_list_sort  != []:
+                    #依序使用適當的container
+                    for container_choosed in layer_container_workloads_list_sort:
+                        container_id = container_choosed[0]
+                        if container_status(container_id)=='in grid':
+                            #改container_db狀態
+                            container_waiting(container_id)
                             #先判斷是否同一container是否有其他商品也在其他訂單商品列表中
                             container_bundle,container_contents = container_otherprd(container_id,prd_list)
                             #container所在的機器手臂ID
-                            arm_id = container_armid(container_id)
-                            #container 放入 工作站內指定訂單中
+                            arm_id = container_choosed[1]
                             for bundle_pid in container_bundle:
-                                # pid :bundle_pid 之訂單內容
                                 pid_order_dict = prd_content[bundle_pid]["order"]
                                 print("pid: "+str(bundle_pid)+"  order: "+str(pid_order_dict))
                                 pid_pick_order_list = []
@@ -175,7 +183,7 @@ def order_pick(self, workstation_id):
                                               " pid: " + str(bundle_pid)+" qt: "+str(pqt))
                                         workstation_addpick(order_id,container_id,bundle_pid,pqt)
                                         pid_pick_order_list.append(order_id)
-                                #將檢出的被訂單刪除
+                                #將撿出的被訂單刪除
                                 for pop_order in pid_pick_order_list:
                                     prd_content[bundle_pid]["order"].pop(pop_order,None)
                                 #若商品已無訂單需求則刪除商品
@@ -184,18 +192,12 @@ def order_pick(self, workstation_id):
                             value = (1,oi,numbering,container_id)
                             numbering += 1
                             #更新對應redis
-                            redis_data_update(arm_id,value)
-                            release_lock(r, lock_name, arm_product_lock)
-                            
+                            redis_data_update_db(arm_id,value)
                             print("oi: "+str(oi)+" arm_id: "+str(arm_id)+" layer: "+str(layer)+" pid: "+str(pid)+" container_id: "+container_id)
-                            #改container_db狀態
-                            container_waiting(container_id)
                             arms_work_transmit.delay(arm_id)
+                        if pid not in prd_list:
                             isbreak = True
                             break
-                        release_lock(r, lock_name, arm_product_lock)
-                    else:
-                        arm_key_all.insert(4,arm_id)
             else:
                 print("商品: "+str(pid)+" 搜尋完畢")
     #訂單商品處理結束
@@ -207,39 +209,7 @@ def order_pick(self, workstation_id):
                         
                         
 
-# @OFAI_Celery_func.task
-# def workstation_open(workstation_id,index_label,index,num):
-#     r = redis.Redis(host='localhost', port=6379, decode_responses=False)  
-#     lock_name = "order_assignment"
-#     #此訂單池還有訂單
-#     while order_processing_count(index_label,index)>0:
-#         print("訂單持還有訂單")
-#         #工作站是否還有工作
-#         if workstation_free(workstation_id):
-#             print("工作站id: ",workstation_id," 沒有訂單")
-#             #取得訂單池ＤＢ鑰匙
-#             order_lock = acquire_lock_with_timeout(r,lock_name, acquire_timeout=3, lock_timeout=30)
-#             #取得失敗
-#             if order_lock != False:
-#                 #分配訂單
-#                 order_l = str(order_assign(index_label,index,num))
-#                 print("訂單池給予訂單")
-#                 order_l_eval = eval(order_l)
-#                 #釋放訂單池ＤＢ
-#                 release_lock(r, lock_name, order_lock)
-#                 workstation_newwork_prd(workstation_id,order_l_eval)
-#                 print("工作站id: ",workstation_id," 撿取訂單項目輸入完成")
-#                 print("工作站id: ",workstation_id," 撿取開始")
-#                 #訂單商品選取撿出container號
-#                 order_pick.delay(order_l)
-#                 print("工作站id: ",workstation_id," 撿取結束")
-#         else:
-#             print("工作站id: ",workstation_id," 還有訂單")
-#             order_l = workstation_order(workstation_id)
-#             print("工作站id: ",workstation_id," 撿取開始")
-#             order_pick.delay(order_l)
-#             print("工作站id: ",workstation_id," 撿取結束")
-#     print("訂單池沒有訂單")
+
 
 @OFAI_Celery_func.task(bind=True)
 def workstation_open(self, workstation_id,index_label,index,num):
@@ -294,9 +264,11 @@ workstation_tasks
 robot_arm_tasks
 '''
 @OFAI_Celery_func.task(bind=True)
-def arms_store(self, container_id,arm_id):
+def arms_store_db(self, container_id,arm_id):
     #先從arm_id找出可放入的位置在將container放入並更新資料庫
-    uri = "mongodb+srv://liyiliou:liyiliou@cluster-yahoo-1.5gjuk.mongodb.net/Cluster-Yahoo-1?retryWrites=true&w=majority"
+    with open('參數檔.txt') as f:
+        json_data = json.load(f)
+    uri = json_data["uri"]    
     r = redis.Redis(host='localhost', port=6379, decode_responses=False)
     r.set("celery-task-meta-" + self.request.id, self.request.id)
     try:
@@ -319,6 +291,7 @@ def arms_store(self, container_id,arm_id):
     container_set_status(container_id,"in_grid")
     #將 container_id 內商品更新 product
     product_push_container(container_id)
+    
     print("Storaging container: container_id: " + container_id + "'s state is changed to in_grid")
 
     
@@ -332,7 +305,9 @@ def arms_pick(self, container_id):
     nodes = redis_dict_get("nodes")
     dists = redis_dict_get("dists")
     
-    uri = "mongodb+srv://liyiliou:liyiliou@cluster-yahoo-1.5gjuk.mongodb.net/Cluster-Yahoo-1?retryWrites=true&w=majority"
+    with open('參數檔.txt') as f:
+        json_data = json.load(f)
+    uri = json_data["uri"]    
     try:
         client = pymongo.MongoClient(uri)
         db = client['ASRS-Cluster-0']
@@ -401,15 +376,17 @@ def arms_work_transmit(self, arm_id):
     取手臂鎖
     '''
     conn = redis.Redis(host='localhost', port=6379, decode_responses=False)  
-    lock_name = arm_id+ "_arm2transmit"
+    lock_name = arm_id+ "_pid"
     lock_val = 1
     while lock_val:
         lock_id = acquire_lock_with_timeout(conn, lock_name, acquire_timeout= 2, lock_timeout= 100)
+        print("arms_work_transmit: waiting lock release " + lock_name)
         if lock_id != False:
             lock_val = 0
     '''
     取container資訊
     '''
+    print("container_info = redis_dict_get_work(arm_id)")
     #print(arms_dict[str(arm_id)]['works'].get())
     #print(eval(arms_dict[str(arm_id)]['works'].get()))
     #container_info = eval(arms_dict[str(arm_id)]['works'].get())
@@ -418,6 +395,7 @@ def arms_work_transmit(self, arm_id):
     '''
     判斷是要撿取還是存取container並執行
     '''
+    print("判斷是要撿取還是存取container並執行")
     if container_info[0] == 1:
         print("arms pick container id: "+str(container_info[3]))
         arms_pick.delay(container_info[3])
@@ -429,6 +407,8 @@ def arms_work_transmit(self, arm_id):
     釋放手臂鎖    
     '''
     release_lock(conn, lock_name, lock_id)
+    print("release_lock " + lock_name +" finished")
+
     return True
 '''
 robot_arm_tasks
@@ -466,36 +446,39 @@ def workstation_workend(self, workstation_id,order_id):
     r = redis.Redis(host='localhost', port=6379, decode_responses=False)
     r.set("celery-task-meta-" + self.request.id, self.request.id)
     #工作站檢取完後 刪除工作
-    uri = "mongodb+srv://liyiliou:liyiliou@cluster-yahoo-1.5gjuk.mongodb.net/Cluster-Yahoo-1?retryWrites=true&w=majority"
+    with open('參數檔.txt') as f:
+        json_data = json.load(f)
+    uri = json_data["uri"]    
     r = redis.Redis(host='localhost', port=6379, decode_responses=False)
     r.set("celery-task-meta-" + self.request.id, self.request.id)
     try:
         client = pymongo.MongoClient(uri)
         db = client['ASRS-Cluster-0']
+        workstation_db = db["Workstations"]
+        ws = workstation_db.find({'workstation_id':workstation_id})
+        for ws_i in ws:
+            ws_workloads = ws_i['workloads']
+        ws_workloads -= 1
+        myquery = { "workstation_id": workstation_id}
+        #減工作量
+        newvalues = { "$set": {"workloads":ws_workloads}}
+        workstation_db.update(myquery,newvalues)
+        #刪訂單
+        newvalues = { "$unset": {"work."+order_id:{}}}
+        workstation_db.update(myquery,newvalues)
+        if workstation_free(workstation_id):
+            with open('參數檔.txt') as f:
+                json_data = json.load(f)
+            index_label = json_data["index_label"]
+            index = json_data["index"]
+            num = json_data["num"]
+            workstation_open.delay(workstation_id,index_label,index,num)
         
     except:
         workstation_workend.delay(workstation_id, order_id)
         Sigkill_func(self.request.id)
         return True
-    workstation_db = db["Workstations"]
-    ws = workstation_db.find({'workstation_id':workstation_id})
-    for ws_i in ws:
-        ws_workloads = ws_i['workloads']
-    ws_workloads -= 1
-    myquery = { "workstation_id": workstation_id}
-    #減工作量
-    newvalues = { "$set": {"workloads":ws_workloads}}
-    workstation_db.update(myquery,newvalues)
-    #刪訂單
-    newvalues = { "$unset": {"work."+order_id:{}}}
-    workstation_db.update(myquery,newvalues)
-    if workstation_free(workstation_id):
-        with open('參數檔.txt') as f:
-            json_data = json.load(f)
-        index_label = json_data["index_label"]
-        index = json_data["index"]
-        num = json_data["num"]
-        workstation_open.delay(workstation_id,index_label,index,num)
+    
 
 @OFAI_Celery_func.task(bind=True)
 def container_operate(self, container_id):
@@ -512,10 +495,25 @@ def container_operate(self, container_id):
             print("workstation_id: "+str(workstation_id)+" finished order: "+str(order_id))
             workstation_workend.delay(workstation_id, order_id)
     #選擇放回去的arm_id
-    arm_id = container_putback(container_id)
+    index_putback = 1
+    while index_putback:
+        try:
+            arm_id = container_putback(container_id)
+            index_putback = 0
+        except:
+            index_putback = 1
+        
     oi = get_time_string()
     value = (0,oi,0,container_id)
-    redis_data_update(arm_id,value)
+    lock_name = arm_id+ "_pid"
+    lock_val = 1
+    while lock_val:
+        lock_id = acquire_lock_with_timeout(r, lock_name, acquire_timeout= 2, lock_timeout= 100)
+        print("container_operate: waiting lock release " + lock_name)
+        if lock_id != False:
+            lock_val = 0
+    redis_data_update_db(arm_id,value)
+    release_lock(r, lock_name, lock_id)
     arms_work_transmit.delay(arm_id)
     return True
 '''
