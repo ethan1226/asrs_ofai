@@ -1633,6 +1633,11 @@ def redis_dict_get_work(key):
     redis_dict_set(key, value)
     return container_info
 
+def redis_dict_get_workload(key):
+    value = redis_dict_get(key)
+    workloads = value['workload']
+    return workloads
+
 def redis_dict_set(key, value):
     r = redis.Redis(host='localhost', port=6379, decode_responses=False)  
     r.set(key,dill.dumps(value))
