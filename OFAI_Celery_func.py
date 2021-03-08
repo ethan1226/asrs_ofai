@@ -158,46 +158,54 @@ def order_pick(self, workstation_id):
                 #若有適合的container則進行撿取
                 if layer_container_workloads_list_sort  != []:
                     #依序使用適當的container
-                    for container_choosed in layer_container_workloads_list_sort:
-                        container_id = container_choosed[0]
-                        if container_status(container_id)=='in grid':
-                            #改container_db狀態
-                            container_waiting(container_id)
-                            #先判斷是否同一container是否有其他商品也在其他訂單商品列表中
-                            container_bundle,container_contents = container_otherprd(container_id,prd_list)
-                            #container所在的機器手臂ID
-                            arm_id = container_choosed[1]
-                            for bundle_pid in container_bundle:
-                                pid_order_dict = prd_content[bundle_pid]["order"]
-                                print("pid: "+str(bundle_pid)+"  order: "+str(pid_order_dict))
-                                pid_pick_order_list = []
-                                for order_id,pqt in pid_order_dict.items():
-                                    #若container內pid商品數量還夠
-                                    if container_contents[bundle_pid] >= pqt:
-                                        #container內pid商品數量檢出
-                                        container_contents[bundle_pid] -= pqt
-                                        #訂單商品pid數量檢出
-                                        prd_qt -= pqt
-                                        #工作站增加要撿取之container與商品pid資訊
-                                        print("order picked order id: "+str(order_id)+" container_id: "+str(container_id)+
-                                              " pid: " + str(bundle_pid)+" qt: "+str(pqt))
-                                        workstation_addpick(order_id,container_id,bundle_pid,pqt)
-                                        pid_pick_order_list.append(order_id)
-                                #將撿出的被訂單刪除
-                                for pop_order in pid_pick_order_list:
-                                    prd_content[bundle_pid]["order"].pop(pop_order,None)
-                                #若商品已無訂單需求則刪除商品
-                                if prd_content[bundle_pid]["order"] == {}:
-                                    prd_list.remove(bundle_pid)
-                            value = (1,oi,numbering,container_id)
-                            numbering += 1
-                            #更新對應redis
-                            redis_data_update_db(arm_id,value)
-                            print("oi: "+str(oi)+" arm_id: "+str(arm_id)+" layer: "+str(layer)+" pid: "+str(pid)+" container_id: "+container_id)
-                            arms_work_transmit.delay(arm_id)
-                        if pid not in prd_list:
-                            isbreak = True
-                            break
+                    while len(layer_container_workloads_list_sort) > 0:
+                        container_choosed = layer_container_workloads_list_sort[0]
+                        layer_container_workloads_list_sort.remove(container_choosed)
+                        arm_id = container_choosed[1]
+                        lock_name = arm_id + "_pid"
+                        arm_product_lock = acquire_lock_with_timeout(r, lock_name, acquire_timeout=2, lock_timeout=30)
+                        if arm_product_lock != False:
+                            container_id = container_choosed[0]
+                            if container_status(container_id)=='in grid':
+                                #改container_db狀態
+                                container_waiting(container_id)
+                                #先判斷是否同一container是否有其他商品也在其他訂單商品列表中
+                                container_bundle,container_contents = container_otherprd(container_id,prd_list)
+                                #container所在的機器手臂ID
+                                
+                                for bundle_pid in container_bundle:
+                                    pid_order_dict = prd_content[bundle_pid]["order"]
+                                    print("pid: "+str(bundle_pid)+"  order: "+str(pid_order_dict))
+                                    pid_pick_order_list = []
+                                    for order_id,pqt in pid_order_dict.items():
+                                        #若container內pid商品數量還夠
+                                        if container_contents[bundle_pid] >= pqt:
+                                            #container內pid商品數量檢出
+                                            container_contents[bundle_pid] -= pqt
+                                            #訂單商品pid數量檢出
+                                            prd_qt -= pqt
+                                            #工作站增加要撿取之container與商品pid資訊
+                                            print("order picked order id: "+str(order_id)+" container_id: "+str(container_id)+
+                                                  " pid: " + str(bundle_pid)+" qt: "+str(pqt))
+                                            workstation_addpick(order_id,container_id,bundle_pid,pqt)
+                                            pid_pick_order_list.append(order_id)
+                                    #將撿出的被訂單刪除
+                                    for pop_order in pid_pick_order_list:
+                                        prd_content[bundle_pid]["order"].pop(pop_order,None)
+                                    #若商品已無訂單需求則刪除商品
+                                    if prd_content[bundle_pid]["order"] == {}:
+                                        prd_list.remove(bundle_pid)
+                                value = (1,oi,numbering,container_id)
+                                numbering += 1
+                                #更新對應redis
+                                redis_data_update_db(arm_id,value)
+                                print("oi: "+str(oi)+" arm_id: "+str(arm_id)+" layer: "+str(layer)+" pid: "+str(pid)+" container_id: "+container_id)
+                                arms_work_transmit.delay(arm_id)
+                            if pid not in prd_list:
+                                isbreak = True
+                                break
+                        else:
+                            layer_container_workloads_list_sort.insert(4,container_choosed)
             else:
                 print("商品: "+str(pid)+" 搜尋完畢")
     #訂單商品處理結束
