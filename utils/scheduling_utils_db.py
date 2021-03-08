@@ -2077,6 +2077,7 @@ def redis_data_update(key,value,layer):
     r.set(key,dill.dumps(one_dict))
 
 def redis_data_interchange(src_storage_id,dst_storage_id,container_id):
+    #移動箱子更新redis data
     with open('參數檔.txt') as f:
         json_data = json.load(f)
     uri = json_data["uri"]    
