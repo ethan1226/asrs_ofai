@@ -199,8 +199,10 @@ def order_pick(self, workstation_id):
                                 numbering += 1
                                 #更新對應redis
                                 redis_data_update_db(arm_id,value)
+                                release_lock(r, lock_name, arm_product_lock)
                                 print("oi: "+str(oi)+" arm_id: "+str(arm_id)+" layer: "+str(layer)+" pid: "+str(pid)+" container_id: "+container_id)
                                 arms_work_transmit.delay(arm_id)
+                            release_lock(r, lock_name, arm_product_lock)
                             if pid not in prd_list:
                                 isbreak = True
                                 break
@@ -394,7 +396,7 @@ def arms_work_transmit(self, arm_id):
     '''
     取container資訊
     '''
-    print("container_info = redis_dict_get_work(arm_id)")
+    print("in arms work transmit get works from redis")
     #print(arms_dict[str(arm_id)]['works'].get())
     #print(eval(arms_dict[str(arm_id)]['works'].get()))
     #container_info = eval(arms_dict[str(arm_id)]['works'].get())
