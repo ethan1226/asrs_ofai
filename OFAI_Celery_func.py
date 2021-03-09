@@ -221,7 +221,7 @@ def workstation_open(self, workstation_id,index_label,index,num):
         if workstation_free(workstation_id):
             r.delete(workstation_id+"open")
             print("工作站id: "+str(workstation_id)+" 完成 補新訂單")
-        #workstation_open.delay(workstation_id,index_label,index,num)
+        # workstation_open.delay(workstation_id,index_label,index,num)
 '''
 workstation_tasks
 '''
@@ -441,6 +441,7 @@ def workstation_workend(self, workstation_id,order_id):
             workstation_open.delay(workstation_id,index_label,index,num)
         
     except:
+        print("restart workstation workend")
         workstation_workend.delay(workstation_id, order_id)
         Sigkill_func(self.request.id)
         return True
