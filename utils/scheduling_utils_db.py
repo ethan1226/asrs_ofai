@@ -1707,7 +1707,7 @@ def workstation_addpick(order_id,container_id,prd,pqt):
     insert_pick[container_id] = {prd:pqt}
     ws_work[order_id]["container"].update(insert_pick)
     myquery = { "workstation_id": workstation_id }
-    newvalues = { "$set": { "work."+order_id+".container."+container_id:{prd:pqt}}}
+    newvalues = { "$set": { "work."+order_id+".container."+container_id+"."+prd:pqt}}
     workstation_db.update(myquery,newvalues)
 def workstation_get(container_id):
     # 工作站收到container
@@ -1769,9 +1769,7 @@ def workstation_pick(container_id):
             if ws_work[output_order_id]["prd"][prd]["qt"] == 0:
                 ws_work[output_order_id]["prd"].pop(prd,None)
                 newvalues = { "$unset": { "work."+output_order_id+".prd."+prd:""}}
-                workstation_db.update(myquery,newvalues)
-            else:
-                workstation_db.update(myquery,newvalues)
+            workstation_db.update(myquery,newvalues)
     #撿完container後刪除並更新db
     for output_order_id in output_order_id_list:
         ws_work[output_order_id]["container"].pop(container_id,None)
