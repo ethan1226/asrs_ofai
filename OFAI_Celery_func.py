@@ -148,7 +148,7 @@ def order_pick(self, workstation_id):
                 #找有pid的container 在layer層
                 container_candidates = container_db.aggregate([{"$match": { "relative_coords.rx":layer,
                                                                             "contents."+pid:{'$exists':"true"},
-                                                                            "status":"in_grid"}}])
+                                                                            "status":"in grid"}}])
                 layer_container_workloads_list = []
                 #排序找到的container所在的arm workloads
                 for ci in container_candidates:
@@ -272,7 +272,7 @@ workstation_tasks
 robot_arm_tasks
 '''
 @OFAI_Celery_func.task(bind=True)
-def arms_store_db(self, container_id,arm_id):
+def arms_store(self, container_id,arm_id):
     #先從arm_id找出可放入的位置在將container放入並更新資料庫
     with open('參數檔.txt') as f:
         json_data = json.load(f)
@@ -296,11 +296,11 @@ def arms_store_db(self, container_id,arm_id):
     #container_id 修改資訊(移動到storage_id & status to in grid)
     # print("container_id: "+container_id+" storage_id: "+storage_id)
     container_moveto(container_id,storage_id)
-    container_set_status(container_id,"in_grid")
+    container_set_status(container_id,"in grid")
     #將 container_id 內商品更新 product
     product_push_container(container_id)
     
-    print("Storaging container: container_id: " + container_id + "'s state is changed to in_grid")
+    print("Storaging container: container_id: " + container_id + "'s state is changed to in grid")
 
     
 @OFAI_Celery_func.task(bind=True)
