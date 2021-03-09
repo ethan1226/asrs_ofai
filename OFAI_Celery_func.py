@@ -23,50 +23,6 @@ OFAI_Celery_func = Celery('OFAI_Celery_func', broker=broker, backend=backend)
 '''
 workstation_tasks
 '''
-@OFAI_Celery_func.task(bind=True)
-def redis_arm_product_update(self):
-    r = redis.Redis(host='localhost', port=6379, decode_responses=False)
-    r.set("celery-task-meta-" + self.request.id, self.request.id)
-    arm_product_ptr = {}
-    with open('參數檔.txt') as f:
-        json_data = json.load(f)
-    uri = json_data["uri"]
-    try:
-        client = pymongo.MongoClient(uri)
-        db = client['ASRS-Cluster-0']
-    except:
-        Sigkill_func(self.request.id)
-    storage_db = db["Storages"]
-    product_db = db["Products"]
-    product_dict = {}
-    #商品清單
-    for pi in product_db.find():
-        product_dict[pi["product_id"]] = pi
-    #將storage分類
-    for si in storage_db.find():
-        storage_id = si['storage_id']
-        sid = json.loads(storage_id.replace('(', '[').replace(')', ']'))
-        layer = str(sid[1][0])
-        if si["arm_id"] not in arm_product_ptr:
-            works = PriorityQueue()
-            arm_product_ptr[si["arm_id"]] = {'workload':works.qsize(), 'works':works, "turnover":0}
-            arm_product_ptr[si["arm_id"]]["0"] = {}
-            arm_product_ptr[si["arm_id"]]["1"] = {}
-            for k,v in si["contents"].items():
-                arm_product_ptr[si["arm_id"]][layer][k] = {"qt":v,"container_id":si["container_id"]}
-                arm_product_ptr[si["arm_id"]]["turnover"] += product_dict[k]['turnover']
-            
-        else:
-            for k,v in si["contents"].items():
-                if k not in arm_product_ptr[si["arm_id"]][layer]:
-                    arm_product_ptr[si["arm_id"]][layer][k] = {"qt":v,"container_id":si["container_id"]}
-                    arm_product_ptr[si["arm_id"]]["turnover"] += product_dict[k]['turnover']
-                else:
-                    arm_product_ptr[si["arm_id"]][layer][k] = {"qt":arm_product_ptr[si["arm_id"]][layer][k]["qt"]+v,"container_id":si["container_id"]}
-                    arm_product_ptr[si["arm_id"]]["turnover"] += product_dict[k]['turnover']
-    
-    for key, value in arm_product_ptr.items():
-        redis_dict_set(key,value)
 
 def order_assign(index_label,index,num):
     with open('參數檔.txt') as f:
