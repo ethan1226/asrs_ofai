@@ -1299,11 +1299,8 @@ def storage_pop(container_id):
     client = pymongo.MongoClient(uri)
     db = client['ASRS-Cluster-0']
     storage_dict = db["Storages"]
-    storage_info = storage_dict.find({'container_id':container_id})
-    for s_i in storage_info:
-        storage_id = s_i['storage_id']
-    myquery = { "storage_id": storage_id }
-    newvalues = { "$set": { "container_id": ""}}
+    myquery = { "container_id": container_id }
+    newvalues = { "$set": { "container_id": "","contents" : {}}}
     storage_dict.update(myquery,newvalues) 
     
 
@@ -1314,11 +1311,13 @@ def storage_push(storage_id,container_id):
     uri = json_data["uri"]
     client = pymongo.MongoClient(uri)
     db = client['ASRS-Cluster-0']
-    storage_dict = db["Storages"]
+    storage_db = db["Storages"]
+    container_db = db["Containers"]
     myquery = { "storage_id": storage_id }
-    newvalues = { "$set": { "container_id": container_id}}
-    storage_dict.update(myquery,newvalues)  
-    return storage_dict
+    contents = container_db.find_one({"container_id":container_id})["contents"]
+    newvalues = { "$set": { "container_id": container_id,"contents":contents}}
+    storage_db.update(myquery,newvalues)  
+    
 
 def storage_interchange(src_storage_id,dst_storage_id):
     #將src_storage_id與dst_storage_id上的container_id互換
@@ -1430,13 +1429,13 @@ def container_moveto(container_id,moveto):
     uri = json_data["uri"]
     client = pymongo.MongoClient(uri)
     db = client['ASRS-Cluster-0']
-    container_dict = db["Containers"]
-    storage_dict = db["Storages"]
+    container_db = db["Containers"]
+    storage_db = db["Storages"]
     storage_id_list= json.loads(moveto.replace('(', '[').replace(')', ']'))
     myquery = { "container_id": container_id }
     relative_coords = {"rx":storage_id_list[1][0],"ry":storage_id_list[1][1],"rz":storage_id_list[1][2]}
     newvalues = { "$set": { "grid_id": storage_id_list[0],'relative_coords':relative_coords}} 
-    container_dict.update(myquery,newvalues)
+    container_db.update(myquery,newvalues)
 
 def container_grid(container_id,new_grid_id):
     #將container_id 的grid_id修改為 grid_id
@@ -1445,10 +1444,12 @@ def container_grid(container_id,new_grid_id):
     uri = json_data["uri"]
     client = pymongo.MongoClient(uri)
     db = client['ASRS-Cluster-0']
-    container_dict = db["Containers"]
+    container_db = db["Containers"]
+    storage_db = db["Storages"]
     myquery = { "container_id": container_id }
     newvalues = { "$set": { "grid_id": new_grid_id}} 
-    container_dict.update(myquery,newvalues)  
+    container_db.update(myquery,newvalues)
+    storage_db.update(myquery,newvalues)
     
 def container_waiting(container_id):
     #container 狀態改為等待被撿取 並更新資料庫（刪除container_id在product內資訊）

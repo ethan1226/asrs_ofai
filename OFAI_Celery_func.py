@@ -289,6 +289,7 @@ def arms_pick(self, container_id):
         #在上層直接取出
         container_set_status(container_id,'on_conveyor')
         container_grid(container_id,-1)
+        storage_pop(container_id)
     else:
         print("在下層")
         #在下層先判斷是否上層有東西
@@ -303,6 +304,7 @@ def arms_pick(self, container_id):
             #上層沒有東西,直接取出
             container_set_status(container_id,'on_conveyor')
             container_grid(container_id,-1)
+            storage_pop(container_id)
         else:
             print("上層有東西,先移開後取出")
             #上層有東西,先移開後取出
