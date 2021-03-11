@@ -94,7 +94,6 @@ def order_pick(self, workstation_id):
         print("workstation id: "+str(workstation_id)+" 剩餘訂單商品數量: "+str(len(prd_list))+" 準備撿取pid: "+str(pid))
         oi = get_time_string()
         numbering = 0
-        prd_qt = prd_content[pid]["qt"]
         isbreak = False
         #內外層搜尋
         for layer in range(1,-1,-1):
@@ -128,34 +127,48 @@ def order_pick(self, workstation_id):
                                 container_waiting(container_id)
                                 #先判斷是否同一container是否有其他商品也在其他訂單商品列表中
                                 container_bundle,container_contents = container_otherprd(container_id,prd_list)
-                                #container所在的機器手臂ID
-                                
+                                #是否有撿取此container
+                                pick_container = 0
+                                #將有在同一工作站的同一箱訂單商品進行加入工作站工作
                                 for bundle_pid in container_bundle:
+                                    #訂單商品bundle_pid需求資訊
                                     pid_order_dict = prd_content[bundle_pid]["order"]
                                     print("pid: "+str(bundle_pid)+"  order: "+str(pid_order_dict))
                                     pid_pick_order_list = []
                                     for order_id,pqt in pid_order_dict.items():
-                                        #若container內pid商品數量還夠
-                                        if container_contents[bundle_pid] >= pqt:
-                                            #container內pid商品數量檢出
+                                        if container_contents[bundle_pid] >= pqt and container_contents[bundle_pid] > 0:
+                                            #若container內pid商品數量還夠
+                                            #container內pid商品數量撿出
                                             container_contents[bundle_pid] -= pqt
-                                            #訂單商品pid數量檢出
-                                            prd_qt -= pqt
                                             #工作站增加要撿取之container與商品pid資訊
                                             print("order picked order id: "+str(order_id)+" container_id: "+str(container_id)+
                                                   " pid: " + str(bundle_pid)+" qt: "+str(pqt))
                                             workstation_addpick(order_id,container_id,bundle_pid,pqt)
+                                            pick_container += 1
                                             pid_pick_order_list.append(order_id)
+                                        elif container_contents[bundle_pid] < pqt and container_contents[bundle_pid] > 0:
+                                            #若container內pid商品數量不足訂單需求數量則撿出鄉內全部給此訂單
+                                            pic_qt = container_contents[bundle_pid]
+                                            container_contents[bundle_pid] -= container_contents[bundle_pid]
+                                            print("order picked order id: "+str(order_id)+" container_id: "+str(container_id)+
+                                                  " pid: " + str(bundle_pid)+" qt: "+str(pic_qt))
+                                            workstation_addpick(order_id,container_id,bundle_pid,pic_qt)
+                                            pick_container += 1
+                                        else:
+                                            print("container_id: "+str(container_id)+" pid: "+str(bundle_pid)+" is empty")
+                                            
                                     #將撿出的被訂單刪除
                                     for pop_order in pid_pick_order_list:
                                         prd_content[bundle_pid]["order"].pop(pop_order,None)
                                     #若商品已無訂單需求則刪除商品
                                     if prd_content[bundle_pid]["order"] == {}:
                                         prd_list.remove(bundle_pid)
-                                value = (1,oi,numbering,container_id)
-                                numbering += 1
-                                #更新對應redis
-                                redis_data_update_db(arm_id,value)
+                                if pick_container >0:
+                                    print("this container to pick for "+str(pick_container)+" orders")
+                                    value = (1,oi,numbering,container_id)
+                                    numbering += 1
+                                    #更新對應redis
+                                    redis_data_update_db(arm_id,value)
                                 release_lock(r, lock_name, arm_product_lock)
                                 print("oi: "+str(oi)+" arm_id: "+str(arm_id)+" layer: "+str(layer)+" pid: "+str(pid)+" container_id: "+container_id)
                                 arms_work_transmit.delay(arm_id)
