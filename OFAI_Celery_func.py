@@ -171,6 +171,8 @@ def order_pick(self, workstation_id):
                                     numbering += 1
                                     #更新對應redis
                                     redis_data_update_db(arm_id,value)
+                                else:
+                                    container_set_status(container_id,'in grid')
                                 release_lock(r, lock_name, arm_product_lock)
                                 print("oi: "+str(oi)+" arm_id: "+str(arm_id)+" layer: "+str(layer)+" pid: "+str(pid)+" container_id: "+container_id)
                                 arms_work_transmit.delay(arm_id)
