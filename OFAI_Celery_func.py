@@ -110,6 +110,8 @@ def order_pick(self, workstation_id):
                     arm_id = container_armid(ci["container_id"])
                     if arm_id != "":
                         layer_container_workloads_list.append([ci["container_id"],arm_id,arm_workloads(arm_id)])
+                    else:
+                        print("error no container in storage container_id is "+str(ci["container_id"]))
                 layer_container_workloads_list_sort = sorted(layer_container_workloads_list, key=lambda s: s[2])
                 #若有適合的container則進行撿取
                 if layer_container_workloads_list_sort  != []:
