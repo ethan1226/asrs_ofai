@@ -109,7 +109,8 @@ def order_pick(self, workstation_id):
                 #排序找到的container所在的arm workloads
                 for ci in container_candidates:
                     arm_id = container_armid(ci["container_id"])
-                    layer_container_workloads_list.append([ci["container_id"],arm_id,arm_workloads(arm_id)])
+                    if arm_id != "":
+                        layer_container_workloads_list.append([ci["container_id"],arm_id,arm_workloads(arm_id)])
                 layer_container_workloads_list_sort = sorted(layer_container_workloads_list, key=lambda s: s[2])
                 #若有適合的container則進行撿取
                 if layer_container_workloads_list_sort  != []:

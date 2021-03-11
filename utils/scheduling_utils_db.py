@@ -1466,9 +1466,10 @@ def container_armid(container_id):
     client = pymongo.MongoClient(uri)
     db = client['ASRS-Cluster-0']
     storage_db = db["Storages"]
-
+    arm_id = ""
     for container_storage_info in storage_db.find({'container_id':container_id}):
         arm_id = str(container_storage_info['arm_id'])
+    print("in container_armid container_id: "+container_id+" arm_id: "+arm_id)
     return arm_id
     
 
