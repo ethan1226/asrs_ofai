@@ -149,7 +149,9 @@ def order_pick(self, workstation_id):
                                                   " pid: " + str(bundle_pid)+" qt: "+str(pqt))
                                             workstation_addpick(order_id,container_id,bundle_pid,pqt)
                                             pick_container += 1
+                                            #撿完的訂單刪除
                                             pid_pick_order_list.append(order_id)
+                                            #刪除訂單需求商品數量
                                             prd_content[bundle_pid]["order"][order_id] -= pqt
                                         elif container_contents[bundle_pid] < pqt and container_contents[bundle_pid] > 0:
                                             #若container內pid商品數量不足訂單需求數量則撿出鄉內全部給此訂單
@@ -159,6 +161,7 @@ def order_pick(self, workstation_id):
                                                   " pid: " + str(bundle_pid)+" qt: "+str(pic_qt))
                                             workstation_addpick(order_id,container_id,bundle_pid,pic_qt)
                                             pick_container += 1
+                                            #刪除訂單需求商品數量
                                             prd_content[bundle_pid]["order"][order_id] -= pic_qt
                                         else:
                                             print("container_id: "+str(container_id)+" pid: "+str(bundle_pid)+" is empty")
