@@ -1359,13 +1359,16 @@ def container_pick(container_id,pick):
     container_info = container_db.find({"container_id": container_id})
     for c_i in container_info:
         contents = c_i['contents']
-    pick = eval(pick)
-    for k,v in pick.items():
-        if k in contents:
-            contents[k] -= v
+    for pid,pqt in pick.items():
+        contents[pid] -= pqt
+        if contents[pid] == 0:
+            contents.pop(pid,None)
     myquery = { "container_id": container_id }
     newvalues = { "$set": { "contents": contents}} 
     container_db.update(myquery,newvalues)
+
+
+    
 
 def container_putin(container_id,putin):
     #將container_id內存入putin, putin為str '{'pid':qt}'
@@ -1788,21 +1791,25 @@ def workstation_pick(container_id):
                 #找出container在哪些張訂單號
                 output_order_id_list.append(order_id)
     #刪除 container內要撿的商品並更新db
+    container_content_pick = {}
     myquery = { "workstation_id": workstation_id}
     for output_order_id in output_order_id_list:
         for prd,pqt in ws_work[output_order_id]["container"][container_id].items():
             ws_work[output_order_id]["prd"][prd]["qt"] -= pqt
+            container_content_pick[prd] = pqt
             newvalues = { "$inc": { "work."+output_order_id+".prd."+prd+".qt":-pqt}}
             #需求量撿完刪除訂單商品並更新db
             if ws_work[output_order_id]["prd"][prd]["qt"] == 0:
                 ws_work[output_order_id]["prd"].pop(prd,None)
                 newvalues = { "$unset": { "work."+output_order_id+".prd."+prd:""}}
             workstation_db.update(myquery,newvalues)
-    #撿完container後刪除並更新db
+    #撿完container後刪除並更新workstation_db
     for output_order_id in output_order_id_list:
         ws_work[output_order_id]["container"].pop(container_id,None)
         newvalues = { "$unset": { "work."+output_order_id+".container."+container_id:""}}
         workstation_db.update(myquery,newvalues)
+    #更新container_db
+    container_pick(container_id, container_content_pick)
     #TODO container送回倉
     print(" workstation_id: "+workstation_id+" order_id: "+str(output_order_id_list))
     return str(output_order_id_list),workstation_id
@@ -2406,4 +2413,8 @@ def container_operate_redis(self, container_id):
     redis_store_work_update(arm_id,value)
     release_lock(r, lock_name, lock_id)
     arms_work_transmit.delay(arm_id)
+    return True
+
+def Sigkill_func(self, task_id):
+    celery.task.control.revoke(task_id, terminate=True, signal='SIGKILL')
     return True
