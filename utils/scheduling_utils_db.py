@@ -1487,20 +1487,39 @@ def container_putback(container_id):
     for c_i in container_info:
         contents = c_i['contents']
     arm_key_all = redis_dict_all_keys()
+    #arm工作量
     arm_workloads = {}
-    arm_prdreserve = {}
+    #arm商品量
+    # arm_prdreserve = {}
+    #arm週轉率
     arm_turnover = {}
+    #elevator工作量
+    elevator_workloads = {}
+    #arm elevator 使用率
+    arm_elevator = {}
+    #arm分數
     arm_score = {}
     for arms_key in arm_key_all:
-        # print(arms_key)
+        # 存取目前手臂工作量 周轉數 跟移動電梯使用工作量
         arms_data = redis_dict_get(arms_key)
         arm_workloads[arms_key] = arms_data["workload"]
         arm_turnover[arms_key] = arms_data["turnover"]
-        arm_prdreserve[arms_key] = len(arms_data["0"])+len(arms_data["1"])
+        arm_id = eval(arms_key)
+        if arm_id[0] not in elevator_workloads:
+            elevator_workloads[arm_id[0]] = arm_workloads[arms_key]
+        else:
+            elevator_workloads[arm_id[0]]+= arm_workloads[arms_key]
+        # arm_prdreserve[arms_key] = len(arms_data["0"])+len(arms_data["1"])
     # arm_workloads_list = sorted(arm_workloads.items(),key=lambda item:item[1])
     # arm_turnover_list = sorted(arm_turnover.items(),key=lambda item:item[1])
     # arm_prdreserve_list = sorted(arm_prdreserve.items(),key=lambda item:item[1])
     for arms_key in arm_key_all:
+        # 將移動電梯使用工作量轉移至手臂電梯使用率
+        arm_id = eval(arms_key)
+        arm_elevator[arms_key] = elevator_workloads[arm_id[0]]
+    
+    for arms_key in arm_key_all:
+        #計算個手臂分數
         if arm_workloads[max(arm_workloads, key=arm_workloads.get)] == 0:
             arm_score_workloads = arm_workloads[arms_key]
         else:
@@ -1510,13 +1529,20 @@ def container_putback(container_id):
             arm_score_turnover = arm_turnover[arms_key]
         else:
             arm_score_turnover = arm_turnover[arms_key]/arm_turnover[max(arm_turnover, key=arm_turnover.get)]
-            
-        if arm_prdreserve[max(arm_prdreserve, key=arm_prdreserve.get)] == 0:
-            arm_score_prdreserve = arm_prdreserve[arms_key]
-        else:
-            arm_score_prdreserve = arm_prdreserve[arms_key]/arm_prdreserve[max(arm_prdreserve, key=arm_prdreserve.get)]
         
-        arm_score[arms_key] = arm_score_workloads + arm_score_turnover + arm_score_prdreserve
+        if arm_elevator[max(arm_elevator, key=arm_elevator.get)] == 0:
+            arm_score_elevator = arm_elevator[arms_key]
+        else:
+            arm_score_elevator = arm_elevator[arms_key]/arm_elevator[max(arm_elevator, key=arm_elevator.get)]
+            
+        
+        # if arm_prdreserve[max(arm_prdreserve, key=arm_prdreserve.get)] == 0:
+        #     arm_score_prdreserve = arm_prdreserve[arms_key]
+        # else:
+        #     arm_score_prdreserve = arm_prdreserve[arms_key]/arm_prdreserve[max(arm_prdreserve, key=arm_prdreserve.get)]
+        
+        # arm_score[arms_key] = arm_score_workloads + arm_score_turnover + arm_score_prdreserve
+        arm_score[arms_key] = arm_score_workloads + arm_score_turnover + arm_score_elevator
     arm_score_list = sorted(arm_score.items(),key=lambda item:item[1])
     for list_n in range(len(arm_score_list)):
         arms_data = redis_dict_get(arm_score_list[list_n][0])
@@ -2126,7 +2152,38 @@ def redis_data_interchange(src_storage_id,dst_storage_id,container_id):
                 one_dict[layer_dst][content_k] = {container_id:content_v}
     r.set(key,dill.dumps(one_dict))
     
+def redis_dict_turnover_pop(key,container_id):    
+    with open('參數檔.txt') as f:
+        json_data = json.load(f)
+    uri = json_data["uri"]    
+    r = redis.Redis(host='localhost', port=6379, decode_responses=False)
+    try:
+        client = pymongo.MongoClient(uri)
+        db = client['ASRS-Cluster-0']
+    except:
+        Sigkill_func(self.request.id)
+    container_db = db["Containers"]
+    value = redis_dict_get(key)
+    container_turnover = container_db.find_one({"container_id":container_id})['turnover']
+    value["turnover"] -= container_turnover
+    redis_dict_set(key, value)
 
+def redis_dict_turnover_push(key,container_id):    
+    with open('參數檔.txt') as f:
+        json_data = json.load(f)
+    uri = json_data["uri"]    
+    r = redis.Redis(host='localhost', port=6379, decode_responses=False)
+    try:
+        client = pymongo.MongoClient(uri)
+        db = client['ASRS-Cluster-0']
+    except:
+        Sigkill_func(self.request.id)
+    container_db = db["Containers"]
+    value = redis_dict_get(key)
+    container_turnover = container_db.find_one({"container_id":container_id})['turnover']
+    value["turnover"] += container_turnover
+    redis_dict_set(key, value)
+    
 def redis_dict_get(key):
     r = redis.Redis(host='localhost', port=6379, decode_responses=False)  
     one_dict = {}
