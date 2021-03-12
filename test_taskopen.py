@@ -11,6 +11,11 @@ Created on Thu Jan 21 16:55:35 2021
 celery -A OFAI_Celery_func worker --loglevel=info
 開啟redis指令
 redis-server
+
+刪除redis 進程
+找到進程
+ps -ef | grep -i redis
+kill -9 60184     60184是進程號碼
 '''
 from utils.scheduling_utils_db import *
 import celery 
