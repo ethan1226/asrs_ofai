@@ -56,6 +56,7 @@ def order_assign(index_label,index,num):
 def order_pick(self, workstation_id):
     #依訂單商品先合併商品資訊 找到適當的container放入工作站
     #搜尋方式從redis改成直接搜尋db
+    print("\033[1;34m order_pick \033[0m")
     r = redis.Redis(host='localhost', port=6379, decode_responses=False)
     with open('參數檔.txt') as f:
         json_data = json.load(f)
@@ -388,9 +389,11 @@ def arms_work_transmit(self, arm_id):
     if container_info[0] == 1:
         print("arms pick container id: "+str(container_info[3]))
         arms_pick.delay(container_info[3])
+        redis_dict_turnover_pop(arm_id,container_info[3])
     else:
         print("arms store container id: "+str(container_info[3])+" on arm id: "+str(arm_id))
         arms_store.delay(container_info[3],arm_id)
+        redis_dict_turnover_push(arm_id,container_info[3])
     
     '''
     釋放手臂鎖    
