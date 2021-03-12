@@ -1244,6 +1244,27 @@ def product_push(container_id,push_products):
         product_db.update_one(myquery, newvalues)
 '''
 
+# def product_push_container(container_id):
+#     #將 container_id 內商品更新至 product
+#     with open('參數檔.txt') as f:
+#         json_data = json.load(f)
+#     uri = json_data["uri"]
+#     client = pymongo.MongoClient(uri)
+#     db = client['ASRS-Cluster-0']
+#     product_db = db["Products"]
+#     container_db = db["Containers"]
+    
+#     container_info = container_db.find({"container_id":container_id})
+#     for c_i in container_info:
+#         contents = c_i['contents']
+#     for pid,pqt in contents.items():
+#         product_info = product_db.find_one({"product_name":pid})
+#         product_container = product_info["container"]
+#         product_container.update({container_id:pqt})
+#         product_qt = sum(product_container.values())
+#         myquery = { "product_name": pid }
+#         newvalues = { "$set": { "container": product_container,"quantity": product_qt} }
+#         product_db.update_one(myquery, newvalues)
 def product_push_container(container_id):
     #將 container_id 內商品更新至 product
     with open('參數檔.txt') as f:
@@ -1253,19 +1274,33 @@ def product_push_container(container_id):
     db = client['ASRS-Cluster-0']
     product_db = db["Products"]
     container_db = db["Containers"]
-    
     container_info = container_db.find({"container_id":container_id})
     for c_i in container_info:
         contents = c_i['contents']
     for pid,pqt in contents.items():
-        product_info = product_db.find_one({"product_name":pid})
-        product_container = product_info["container"]
-        product_container.update({container_id:pqt})
-        product_qt = sum(product_container.values())
         myquery = { "product_name": pid }
-        newvalues = { "$set": { "container": product_container,"quantity": product_qt} }
+        newvalues = { "$set": { "container."+container_id:pqt},"$inc": { "quantity":pqt} }
         product_db.update_one(myquery, newvalues)
 
+# def product_pop_container(container_id):
+#     #將product有container_id的商品扣掉 container_id 並更新數量
+#     with open('參數檔.txt') as f:
+#         json_data = json.load(f)
+#     uri = json_data["uri"]
+#     client = pymongo.MongoClient(uri)
+#     db = client['ASRS-Cluster-0']
+#     product_dict = db["Products"]
+#     #找有container_id的商品
+#     find_container_id = "container." + container_id
+#     product_have_container = product_dict.find({find_container_id:{'$exists':1}})
+#     for phc in product_have_container:
+#         products_name = phc['product_name']
+#         product_dict_container = phc['container']
+#         product_dict_container.pop(container_id,None)
+#         product_dict_qt = sum(product_dict_container.values())
+#         myquery = { "product_name": products_name }
+#         newvalues = { "$set": { "container": product_dict_container,"quantity":product_dict_qt}}
+#         product_dict.update(myquery,newvalues)
 def product_pop_container(container_id):
     #將product有container_id的商品扣掉 container_id 並更新數量
     with open('參數檔.txt') as f:
@@ -1273,19 +1308,16 @@ def product_pop_container(container_id):
     uri = json_data["uri"]
     client = pymongo.MongoClient(uri)
     db = client['ASRS-Cluster-0']
-    product_dict = db["Products"]
+    product_db = db["Products"]
+    container_db = db["Containers"]
+    container_info = container_db.find({"container_id":container_id})
+    for c_i in container_info:
+        contents = c_i['contents']
     #找有container_id的商品
-    find_container_id = "container." + container_id
-    product_have_container = product_dict.find({find_container_id:{'$exists':1}})
-    for phc in product_have_container:
-        products_name = phc['product_name']
-        product_dict_container = phc['container']
-        product_dict_container.pop(container_id,None)
-        product_dict_qt = sum(product_dict_container.values())
-        myquery = { "product_name": products_name }
-        newvalues = { "$set": { "container": product_dict_container,"quantity":product_dict_qt}}
-        product_dict.update(myquery,newvalues)
-
+    for pid,pqt in contents.items():
+        myquery = { "product_name": pid }
+        newvalues = { "$unset": { "container."+container_id:""},"$inc": { "quantity":-pqt}}
+        product_db.update(myquery,newvalues)
 
 
 
