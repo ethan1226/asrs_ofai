@@ -98,9 +98,9 @@ def order_pick(self, workstation_id):
         isbreak = False
         #內外層搜尋
         for layer in range(1,-1,-1):
-            print("搜尋 "+str(layer)+" 層")
             #是否已找到商品container
             if not isbreak:
+                print("pid: "+pid+" 搜尋 "+str(layer)+" 層")
                 #找有pid的container 在layer層
                 container_candidates = container_db.aggregate([{"$match": { "relative_coords.rx":layer,
                                                                             "contents."+pid:{'$exists':"true"},
@@ -168,6 +168,7 @@ def order_pick(self, workstation_id):
                                             
                                     #將撿出的被訂單刪除
                                     for pop_order in pid_pick_order_list:
+                                        print("已撿取訂單: "+pop_order+" pid: "+bundle_pid)
                                         prd_content[bundle_pid]["order"].pop(pop_order,None)
                                     #若商品已無訂單需求則刪除商品
                                     if prd_content[bundle_pid]["order"] == {}:
@@ -180,15 +181,15 @@ def order_pick(self, workstation_id):
                                     redis_data_update_db(arm_id,value)
                                 else:
                                     container_set_status(container_id,'in grid')
-                                release_lock(r, lock_name, arm_product_lock)
+                                # release_lock(r, lock_name, arm_product_lock)
                                 print("oi: "+str(oi)+" arm_id: "+str(arm_id)+" layer: "+str(layer)+" pid: "+str(pid)+" container_id: "+container_id)
                                 arms_work_transmit.delay(arm_id)
                             release_lock(r, lock_name, arm_product_lock)
-                            if pid not in prd_list:
-                                isbreak = True
-                                break
                         else:
                             layer_container_workloads_list_sort.insert(4,container_choosed)
+                        if pid not in prd_list:
+                            isbreak = True
+                            break
             else:
                 print("商品: "+str(pid)+" 搜尋完畢")
     #訂單商品處理結束
