@@ -459,7 +459,7 @@ def workstation_workend(self, workstation_id,order_id):
         ws_workloads -= 1
         myquery = { "workstation_id": workstation_id}
         #減工作量
-        newvalues = { ,"$inc": { "workloads":-1}}
+        newvalues = {"$inc": { "workloads":-1}}
         workstation_db.update(myquery,newvalues)
         #刪訂單
         newvalues = { "$unset": {"work."+order_id:{}}}
