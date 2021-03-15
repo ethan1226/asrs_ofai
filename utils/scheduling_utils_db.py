@@ -741,9 +741,16 @@ def order_check(workstation_id, order_id):
     workstation_info = workstation_db.find({'workstation_id':workstation_id})
     for ws_i in workstation_info:
         ws_work = ws_i['work']
-    if ws_work[order_id]["prd"] == {}:
-        return True
+    if order_id in ws_work:
+        
+        if ws_work[order_id]["prd"] == {}:
+            print("in order_check order id : "+str(order_id)+" in workstation is finished")
+            return True
+        else:
+            print("in order_check order id : "+str(order_id)+" in workstation is not finished")
+            return False
     else:
+        print("in order_check order id : "+str(order_id)+" not in workstation maybe is finished")
         return False
 
 def order_count(index_label,index):

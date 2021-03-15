@@ -153,6 +153,7 @@ def order_pick(self, workstation_id):
                                             pid_pick_order_list.append(order_id)
                                             #刪除訂單需求商品數量
                                             prd_content[bundle_pid]["order"][order_id] -= pqt
+                                            prd_content[bundle_pid]["qt"] -= pqt
                                         elif container_contents[bundle_pid] < pqt and container_contents[bundle_pid] > 0:
                                             #若container內pid商品數量不足訂單需求數量則撿出鄉內全部給此訂單
                                             pic_qt = container_contents[bundle_pid]
@@ -163,6 +164,7 @@ def order_pick(self, workstation_id):
                                             pick_container += 1
                                             #刪除訂單需求商品數量
                                             prd_content[bundle_pid]["order"][order_id] -= pic_qt
+                                            prd_content[bundle_pid]["qt"] -= pic_qt
                                         else:
                                             print("container_id: "+str(container_id)+" pid: "+str(bundle_pid)+" is empty")
                                             
@@ -457,7 +459,7 @@ def workstation_workend(self, workstation_id,order_id):
         ws_workloads -= 1
         myquery = { "workstation_id": workstation_id}
         #減工作量
-        newvalues = { "$set": {"workloads":ws_workloads}}
+        newvalues = { ,"$inc": { "workloads":-1}}
         workstation_db.update(myquery,newvalues)
         #刪訂單
         newvalues = { "$unset": {"work."+order_id:{}}}
