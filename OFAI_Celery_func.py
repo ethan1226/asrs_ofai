@@ -56,7 +56,7 @@ def order_assign(index_label,index,num):
 def order_pick(self, workstation_id):
     #依訂單商品先合併商品資訊 找到適當的container放入工作站
     #搜尋方式從redis改成直接搜尋db
-    print("\033[1;34m order_pick \033[0m")
+    # print("\033[1;34m Ethansay order_pick start \033[0m")
     r = redis.Redis(host='localhost', port=6379, decode_responses=False)
     with open('參數檔.txt') as f:
         json_data = json.load(f)
@@ -113,7 +113,7 @@ def order_pick(self, workstation_id):
                         layer_container_workloads_list.append([ci["container_id"],arm_id,arm_workloads(arm_id)])
                     else:
                         # print("error no container in storage container_id is "+str(ci["container_id"]))
-                        print("\033[1;31m error no container in storage container_id is " +str(ci["container_id"])+"\033[0m")
+                        print("\033[1;31m Ethansay no container in storage container_id is " +str(ci["container_id"])+"\033[0m")
                 layer_container_workloads_list_sort = sorted(layer_container_workloads_list, key=lambda s: s[2])
                 #若有適合的container則進行撿取
                 if layer_container_workloads_list_sort  != []:
