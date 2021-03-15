@@ -100,7 +100,7 @@ def order_pick(self, workstation_id):
         for layer in range(1,-1,-1):
             #是否已找到商品container
             if not isbreak:
-                print("pid: "+pid+" 搜尋 "+str(layer)+" 層")
+                print("workstation id: "+str(workstation_id)+" pid: "+pid+" 搜尋 "+str(layer)+" 層")
                 #找有pid的container 在layer層
                 container_candidates = container_db.aggregate([{"$match": { "relative_coords.rx":layer,
                                                                             "contents."+pid:{'$exists':"true"},
