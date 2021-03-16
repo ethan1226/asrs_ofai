@@ -742,7 +742,6 @@ def order_check(workstation_id, order_id):
     for ws_i in workstation_info:
         ws_work = ws_i['work']
     if order_id in ws_work:
-        
         if ws_work[order_id]["prd"] == {}:
             print("in order_check order id : "+str(order_id)+" in workstation is finished")
             return True
@@ -1395,15 +1394,20 @@ def container_pick(container_id,pick):
     client = pymongo.MongoClient(uri)
     db = client['ASRS-Cluster-0']
     container_db = db["Containers"]
+    product_db = db["Products"]
     container_info = container_db.find({"container_id": container_id})
     for c_i in container_info:
         contents = c_i['contents']
+        turnover = c_i['turnover']
+    newvalues = {}
     for pid,pqt in pick.items():
         contents[pid] -= pqt
         if contents[pid] == 0:
+            pid_turnover = product_db.find_one({"product_id":pid})["turnover"]
             contents.pop(pid,None)
+            newvalues.update({"$inc": { "turnover":-pid_turnover}})
     myquery = { "container_id": container_id }
-    newvalues = { "$set": { "contents": contents}} 
+    newvalues.update({ "$set": { "contents": contents}} )
     container_db.update(myquery,newvalues)
 
 
