@@ -113,7 +113,8 @@ def order_pick(self, workstation_id):
                         layer_container_workloads_list.append([ci["container_id"],arm_id,arm_workloads(arm_id)])
                     else:
                         # print("error no container in storage container_id is "+str(ci["container_id"]))
-                        print("\033[1;31m Ethansay no container in storage container_id is " +str(ci["container_id"])+"\033[0m")
+                        print_string = "Ethansay no container in storage container_id is " +str(ci["container_id"])
+                        print_coler(print_string,"red")
                 layer_container_workloads_list_sort = sorted(layer_container_workloads_list, key=lambda s: s[2])
                 #若有適合的container則進行撿取
                 if layer_container_workloads_list_sort  != []:
@@ -158,7 +159,7 @@ def order_pick(self, workstation_id):
                                             #若container內pid商品數量不足訂單需求數量則撿出鄉內全部給此訂單
                                             pic_qt = container_contents[bundle_pid]
                                             container_contents[bundle_pid] -= container_contents[bundle_pid]
-                                            print("order picked order id: "+str(order_id)+" container_id: "+str(container_id)+
+                                            print("container qt not enough for order picked order id: "+str(order_id)+" container_id: "+str(container_id)+
                                                   " pid: " + str(bundle_pid)+" qt: "+str(pic_qt))
                                             workstation_addpick(order_id,container_id,bundle_pid,pic_qt)
                                             pick_container += 1
