@@ -732,6 +732,7 @@ def order_pick_redis(self, workstation_id):
               
 
 def order_check(workstation_id, order_id):
+    print("in order check workstation id: "+str(workstation_id)+" order id: "+str(order_id))
     with open('參數檔.txt') as f:
         json_data = json.load(f)
     uri = json_data["uri"]
@@ -743,13 +744,13 @@ def order_check(workstation_id, order_id):
         ws_work = ws_i['work']
     if order_id in ws_work:
         if ws_work[order_id]["prd"] == {}:
-            print("in order_check order id : "+str(order_id)+" in workstation is finished")
+            print("workstation id: "+str(workstation_id)+" in order_check order id : "+str(order_id)+" in workstation is finished")
             return True
         else:
-            print("in order_check order id : "+str(order_id)+" in workstation is not finished")
+            print("workstation id: "+str(workstation_id)+" in order_check order id : "+str(order_id)+" in workstation is not finished")
             return False
     else:
-        print_string = "in order_check order id : "+str(order_id)+" not in workstation maybe is finished"
+        print_string ="workstation id: "+str(workstation_id)+" in order_check order id : "+str(order_id)+" not in workstation maybe is finished"
         print_coler(print_string,"g")
         return False
 
