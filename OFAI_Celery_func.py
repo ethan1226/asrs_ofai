@@ -197,6 +197,7 @@ def order_pick(self, workstation_id):
                         else:
                             layer_container_workloads_list_sort.insert(4,container_choosed)
                         if pid not in prd_list:
+                            print("workstation id: "+str(workstation_id)+" pid: "+str(pid)+" out of prd_list")
                             isbreak = True
                             break
             else:
