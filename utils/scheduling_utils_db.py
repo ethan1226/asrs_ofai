@@ -2461,3 +2461,14 @@ def container_operate_redis(self, container_id):
 def Sigkill_func(self, task_id):
     celery.task.control.revoke(task_id, terminate=True, signal='SIGKILL')
     return True
+
+def print_coler(string,color):
+    if color == "red":
+        print("\033[1;31m"+string+"\033[0m")
+    elif color == "blue":
+        print("\033[1;34m"+string+"\033[0m")
+    else:
+        print("\033[30m"+string+"\033[0m")
+        
+    
+    
