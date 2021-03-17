@@ -749,7 +749,8 @@ def order_check(workstation_id, order_id):
             print("in order_check order id : "+str(order_id)+" in workstation is not finished")
             return False
     else:
-        print("in order_check order id : "+str(order_id)+" not in workstation maybe is finished")
+        print_string = "in order_check order id : "+str(order_id)+" not in workstation maybe is finished"
+        print_coler(print_string,"g")
         return False
 
 def order_count(index_label,index):
@@ -2463,9 +2464,11 @@ def Sigkill_func(self, task_id):
     return True
 
 def print_coler(string,color):
-    if color == "red":
+    if color == "r":
         print("\033[1;31m"+string+"\033[0m")
-    elif color == "blue":
+    elif color == "g":
+        print("\033[1;32m"+string+"\033[0m")
+    elif color == "b":
         print("\033[1;34m"+string+"\033[0m")
     else:
         print("\033[30m"+string+"\033[0m")
