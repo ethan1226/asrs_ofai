@@ -472,17 +472,19 @@ def workstation_workend(self, workstation_id,order_id):
         client = pymongo.MongoClient(uri)
         db = client['ASRS-Cluster-0']
         workstation_db = db["Workstations"]
-        ws = workstation_db.find({'workstation_id':workstation_id})
-        for ws_i in ws:
-            ws_workloads = ws_i['workloads']
-        ws_workloads -= 1
-        myquery = { "workstation_id": workstation_id}
-        #減工作量
-        newvalues = {"$inc": { "workloads":-1}}
-        workstation_db.update(myquery,newvalues)
-        #刪訂單
-        newvalues = { "$unset": {"work."+order_id:{}}}
-        workstation_db.update(myquery,newvalues)
+        if workstation_db.count_documents({"workstation_id": workstation_id,"work."+order_id: {'$exists':1}}) == 1:
+            print("workstation_id: "+str(workstation_id)+" order id: "+str(order_id)+" work end")
+            #若工作站有這張order id
+            myquery = { "workstation_id": workstation_id}
+            #刪訂單
+            newvalues = { "$unset": {"work."+order_id:{}}}
+            workstation_db.update(myquery,newvalues)
+            #減工作量
+            newvalues = {"$inc": { "workloads":-1}}
+            workstation_db.update(myquery,newvalues)
+        else:
+            print_string = "workstation_id: "+str(workstation_id)+" no order id: "+str(order_id)
+            print_coler(print_string,"g")
         if workstation_free(workstation_id):
             with open('參數檔.txt') as f:
                 json_data = json.load(f)
