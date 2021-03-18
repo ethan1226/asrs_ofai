@@ -482,17 +482,17 @@ def workstation_workend(self, workstation_id,order_id):
             #減工作量
             newvalues = {"$inc": { "workloads":-1}}
             workstation_db.update(myquery,newvalues)
+            #判斷是否工作站工作沒有工作
+            if workstation_free(workstation_id):
+                with open('參數檔.txt') as f:
+                    json_data = json.load(f)
+                index_label = json_data["index_label"]
+                index = json_data["index"]
+                num = json_data["num"]
+                workstation_open.delay(workstation_id,index_label,index,num)
         else:
             print_string = "workstation_id: "+str(workstation_id)+" no order id: "+str(order_id)
             print_coler(print_string,"g")
-        if workstation_free(workstation_id):
-            with open('參數檔.txt') as f:
-                json_data = json.load(f)
-            index_label = json_data["index_label"]
-            index = json_data["index"]
-            num = json_data["num"]
-            workstation_open.delay(workstation_id,index_label,index,num)
-        
     except:
         print_string = "restart workstation workend"
         print_coler(print_string,"g")
