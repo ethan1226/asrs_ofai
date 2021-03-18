@@ -124,13 +124,16 @@ def order_pick(self, workstation_id):
                         container_choosed = layer_container_workloads_list_sort[0]
                         layer_container_workloads_list_sort.remove(container_choosed)
                         arm_id = container_choosed[1]
-                        lock_name = arm_id + "_pid"
-                        arm_product_lock = acquire_lock_with_timeout(r, lock_name, acquire_timeout=2, lock_timeout=30)
-                        if arm_product_lock != False:
-                            container_id = container_choosed[0]
+                        container_id = container_choosed[0]
+                        #防止container被同時多個工作站選取
+                        container_lock_name = container_id + "_pid"
+                        container_lock = acquire_lock_with_timeout(r, container_lock_name, acquire_timeout=2, lock_timeout=15)
+                        if container_lock != False:
                             if container_status(container_id)=='in grid':
                                 #改container_db狀態
                                 container_waiting(container_id)
+                                #release container lock
+                                release_lock(r, container_lock_name, container_lock)
                                 #先判斷是否同一container是否有其他商品也在其他訂單商品列表中
                                 container_bundle,container_contents = container_otherprd(container_id,prd_list)
                                 #是否有撿取此container
@@ -185,7 +188,15 @@ def order_pick(self, workstation_id):
                                     value = (1,oi,numbering,container_id)
                                     numbering += 1
                                     #更新對應redis
+                                    lock_name = arm_id+ "_pid"
+                                    lock_val = 1
+                                    while lock_val:
+                                        lock_id = acquire_lock_with_timeout(r, lock_name, acquire_timeout= 2, lock_timeout= 100)
+                                        print("更新對應redis waiting lock release " + lock_name)
+                                        if lock_id != False:
+                                            lock_val = 0
                                     redis_data_update_db(arm_id,value)
+                                    release_lock(r, lock_name, lock_id)
                                 else:
                                     #container 內沒有訂單需求
                                     container_set_status(container_id,'in grid')
@@ -193,9 +204,9 @@ def order_pick(self, workstation_id):
                                 print("workstation id: "+str(workstation_id)+" oi: "+str(oi)+" arm_id: "+str(arm_id)+" layer: "+str(layer)+
                                       " pid: "+str(pid)+" container_id: "+container_id)
                                 arms_work_transmit.delay(arm_id)
-                            release_lock(r, lock_name, arm_product_lock)
                         else:
                             layer_container_workloads_list_sort.insert(4,container_choosed)
+                            release_lock(r, container_lock_name, container_lock)
                         if pid not in prd_list:
                             print("workstation id: "+str(workstation_id)+" pid: "+str(pid)+" out of prd_list")
                             isbreak = True
