@@ -1459,23 +1459,26 @@ def container_pick(container_id,pick):
     
 
 def container_putin(container_id,putin):
-    #將container_id內存入putin, putin為str '{'pid':qt}'
+    #將container_id內存入putin, putin為str '{'pid':qt}' 若為新商品則增加container的turnover
     with open('參數檔.txt') as f:
         json_data = json.load(f)
     uri = json_data["uri"]
     client = pymongo.MongoClient(uri)
     db = client['ASRS-Cluster-0']
     container_db = db["Containers"]
-    container_info = container_db.find({"container_id": container_id})
-    for c_i in container_info:
-        contents = c_i['contents']
+    product_db = db["Products"]
+    container_info = container_db.find_one({"container_id": container_id})
+    contents = container_info['contents']
     putin = eval(putin)
+    myquery = { "container_id": container_id }
+    newvalues = {}
     for k,v in putin.items():
         if k not in contents:
             contents[k] = 0
+            turnover = product_db.find_one({"product_id": k})["turnover"]
+            newvalues.update({ "$inc": { "turnover": turnover}})
         contents[k] += v
-    myquery = { "container_id": container_id }
-    newvalues = { "$set": { "contents": contents}} 
+    newvalues.update({ "$set": { "contents": contents}})
     container_db.update(myquery,newvalues)
 
     
