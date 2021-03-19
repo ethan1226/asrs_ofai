@@ -323,6 +323,49 @@ def order_assign(index_label,index,num):
             num -= 1
     return output
 
+def order_assign_crunch(index_label,index,num):
+    #會將有同一個商品的訂單優先分配出去
+    with open('參數檔.txt') as f:
+        json_data = json.load(f)
+    uri = json_data["uri"]
+    client = pymongo.MongoClient(uri)
+    db = client['ASRS-Cluster-0']
+    order_db = db['Orders']
+    order_dict = {}
+    for order_i in order_db.find({"$and":[{index_label:index},{"status":"processing"}]}):
+        order_dict[order_i["order_id"]] = order_i
+    #統計訂單相同物品個數
+    pid_order = {}
+    pid_amount = {}
+    for k,v in order_dict.items():
+        for k_v,v_v in v["contents"].items():
+            if k_v not in pid_order:
+                pid_order[k_v] = {k}
+                pid_amount[k_v] = 1
+            else:
+                pid_order[k_v].update({k})
+                pid_amount[k_v] += 1
+    pid_amount_list = sorted(pid_amount.items(),key=lambda item:item[1],reverse=True)
+    full = False
+    output = []
+    #優先將有同樣商品的進行配單
+    for pid in pid_amount_list:
+        if not full:
+            for order_id in pid_order[pid[0]]:
+                if num<=0:
+                    full = True
+                    break
+                else:
+                    output.append(order_id)
+                    order_dict[k]["status"] = "workstation"
+                    myquery = { "product_name": k }
+                    newvalues = { "$set": { "status": "workstation"}}
+                    order_db.update(myquery,newvalues)
+                    num -= 1
+        else:
+            break
+    return output
+
 def order_pick(workstation_id):
     #依訂單排序找到適當的container放入工作站
     r = redis.Redis(host='localhost', port=6379, decode_responses=False)
@@ -1656,6 +1699,15 @@ def container_otherprd(container_id,prd_list):
             container_bundle.append(pid)
     return container_bundle,container_info['contents']
 
+
+def container_movement():
+    with open('參數檔.txt') as f:
+        json_data = json.load(f)
+    uri = json_data["uri"]
+    client = pymongo.MongoClient(uri)
+    db = client['ASRS-Cluster-0']
+    container_db = db["Containers"]
+    return container_db.count_documents({"$or":[{"status":"on_conveyor"},{"status":"in_workstation"}]})
 
 '''workstation function'''
 def workstation_assign():

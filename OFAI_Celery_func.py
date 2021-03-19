@@ -241,8 +241,13 @@ def workstation_open(self, workstation_id,index_label,index,num):
                 order_lock = acquire_lock_with_timeout(r,lock_name, acquire_timeout=3, lock_timeout=30)
                 #取得失敗
                 if order_lock != False:
-                    #分配訂單
-                    order_l = str(order_assign(index_label,index,num))
+                    #分配訂單 
+                    if container_movement()<20:
+                        #箱子移動數少依時間配單
+                        order_l = str(order_assign(index_label,index,num))
+                    else:
+                        #若目前箱子正在移動的數量太多會先分配商品在同一箱的訂單ｓ
+                        order_l = str(order_assign_crunch(index_label,index,num))
                     print("分配訂單為："+order_l)
                     print("訂單池給予訂單")
                     order_l_eval = eval(order_l)
