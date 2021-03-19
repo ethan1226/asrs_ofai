@@ -1707,7 +1707,7 @@ def container_movement():
     client = pymongo.MongoClient(uri)
     db = client['ASRS-Cluster-0']
     container_db = db["Containers"]
-    return container_db.count_documents({"$or":[{"status":"on_conveyor"},{"status":"in_workstation"}]})
+    return container_db.count_documents({"$or":[{"status":"on_conveyor"},{"status":"in_workstation"},{"status":"waiting"}]})
 
 '''workstation function'''
 def workstation_assign():
