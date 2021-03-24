@@ -1539,11 +1539,11 @@ def container_grid(container_id,new_grid_id):
     client = pymongo.MongoClient(uri)
     db = client['ASRS-Cluster-0']
     container_db = db["Containers"]
-    storage_db = db["Storages"]
+    # storage_db = db["Storages"]
     myquery = { "container_id": container_id }
     newvalues = { "$set": { "grid_id": new_grid_id}} 
     container_db.update(myquery,newvalues)
-    storage_db.update(myquery,newvalues)
+    # storage_db.update(myquery,newvalues)
     
 def container_waiting(container_id):
     #container 狀態改為等待被撿取 並更新資料庫（刪除container_id在product內資訊）
