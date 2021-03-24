@@ -126,7 +126,7 @@ for k, v in nodes.items():
                                 'grid_id':grid_id,
                                 "container_id":"",
                                 "contents":{},
-                                "elevator_id":str(elevator_id),
+                                "elevator_id":elevator_id,
                                 "arm_id":str(arm_id),
                                 "coordinates":{"x":coordinates[0],"y":coordinates[1],"z":coordinates[2]},
                                 "relative_coords":{"rx":relative_coords[0],"ry":relative_coords[1],"rz":relative_coords[2]}}
