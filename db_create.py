@@ -104,9 +104,32 @@ for warehouse in warehouse_db.find():
     G = dill.loads(warehouse["G"])
     dists = dill.loads(warehouse["dists"])
 
+grid_capacity_x = 2
+grid_capacity_y = 4
+grid_capacity_z = 1
+
+permu_candidate = [list(range(grid_capacity_x)), list(range(grid_capacity_y)), list(range(grid_capacity_z))]
+possible_spot = list(itertools.product(*permu_candidate))
 storage_dict = {}
-for k in storage_db.find():
-    storage_dict[ k["storage_id"]] = k
+for k, v in nodes.items():
+    if v['type'] == 'grid_node':
+        grid_id = k # Use the elevator as a starting point of an arm
+        coordinates = nodes[k]['coordinates']
+        for k_n,v_n in nodes.items():
+            if v_n["coordinates"][0] == coordinates[0]+1 and v_n["coordinates"][2] == coordinates[2] and v_n['type'] == "conj_node":
+                elevator_id = k_n
+                
+        for p in list(itertools.product([grid_id], possible_spot)):
+            arm_id = (nodes[grid_id]['aisle_index'][0], nodes[grid_id]['aisle_index'][2])
+            relative_coords = p[1]
+            storage_dict[p] = {'storage_id':str(p),
+                                'grid_id':str(grid_id),
+                                "container_id":"",
+                                "contents":{},
+                                "elevator_id":str(elevator_id),
+                                "arm_id":str(arm_id),
+                                "coordinates":{"x":coordinates[0],"y":coordinates[1],"z":coordinates[2]},
+                                "relative_coords":{"rx":relative_coords[0],"ry":relative_coords[1],"rz":relative_coords[2]}}
         
 for k,v in storage_dict.items():
     v["container_id"] = ""
