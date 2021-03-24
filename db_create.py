@@ -123,7 +123,7 @@ for k, v in nodes.items():
             arm_id = (nodes[grid_id]['aisle_index'][0], nodes[grid_id]['aisle_index'][2])
             relative_coords = p[1]
             storage_dict[p] = {'storage_id':str(p),
-                                'grid_id':str(grid_id),
+                                'grid_id':grid_id,
                                 "container_id":"",
                                 "contents":{},
                                 "elevator_id":str(elevator_id),
