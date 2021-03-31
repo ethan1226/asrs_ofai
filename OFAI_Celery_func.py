@@ -111,7 +111,7 @@ def order_pick(self, workstation_id):
                 for ci in container_candidates:
                     arm_id = container_armid(ci["container_id"])
                     if arm_id != "":
-                        layer_container_workloads_list.append([ci["container_id"],arm_id,arm_workloads(arm_id)])
+                        layer_container_workloads_list.append([ci["container_id"],arm_id,arm_workloads(arm_id),elevator_workloads(arm_id)])
                     else:
                         # print("error no container in storage container_id is "+str(ci["container_id"]))
                         print_string = "workstation id: "+str(workstation_id)+" Ethansay no container in storage container_id is " +str(ci["container_id"])

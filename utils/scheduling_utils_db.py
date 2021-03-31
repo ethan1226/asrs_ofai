@@ -1271,7 +1271,6 @@ def arm_work_sort_list():
 
 def arm_workloads(arm_id):
     arms_data = redis_dict_get(arm_id)
-    
     return arms_data["workload"]
 
 def arm_work_status(arm_id):
@@ -1289,6 +1288,20 @@ def arm_work_status(arm_id):
     arms_status[arm_id]["empty"] = total - arms_status[arm_id]["container"]
     return arms_status
     
+
+def elevator_workloads(arm_id):
+    arm_id_eval = eval(arm_id)
+    arm_key_all = redis_dict_all_keys()
+    elevator_workloads = {}
+    arm_elevator = 0
+    arm_workloads = {}
+    for arms_key in arm_key_all:
+        arms_key_id = eval(arms_key)
+        if arm_id_eval[0] ==arms_key_id[0]:
+            arms_data = redis_dict_get(arms_key)
+            arm_elevator += arms_data["workload"]
+    return arm_elevator
+
 '''product function'''
 '''
 def product_push(container_id,push_products):
