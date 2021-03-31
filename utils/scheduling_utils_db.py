@@ -1273,7 +1273,21 @@ def arm_workloads(arm_id):
     arms_data = redis_dict_get(arm_id)
     
     return arms_data["workload"]
-    
+
+def arm_work_status(arm_id):
+    '''return目前arm已使用的箱數與空箱數'''
+    with open('參數檔.txt') as f:
+        json_data = json.load(f)
+    uri = json_data["uri"]
+    client = pymongo.MongoClient(uri)
+    db = client['ASRS-Cluster-0']
+    storage_db = db["Storages"]
+    total = storage_db.count_documents({"arm_id":arm_id})
+    arms_status = {}
+    arms_status[arm_id] = {}
+    arms_status[arm_id]["container"] = storage_db.count_documents({"$and":[{"arm_id":arm_id},{"contents":{"$ne":{}}}]})
+    arms_status[arm_id]["empty"] = total - arms_status[arm_id]["container"]
+    return arms_status
     
 '''product function'''
 '''
