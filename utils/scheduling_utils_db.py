@@ -1767,6 +1767,7 @@ def container_exception():
         #status : waiting , in_workstation , on_conveyor
         if status == "waiting":
             #status 為 waiting
+            product_push_container(container_id)
             container_set_status(container_id,"in grid")
         elif status == "in_workstation":
             #status 為 in_workstation
