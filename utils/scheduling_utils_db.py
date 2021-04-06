@@ -1739,6 +1739,78 @@ def container_movement():
     container_db = db["Containers"]
     return container_db.count_documents({"$or":[{"status":"on_conveyor"},{"status":"in_workstation"},{"status":"waiting"}]})
 
+def container_exception():
+    r = redis.Redis(host='localhost', port=6379, decode_responses=False)
+    with open('參數檔.txt') as f:
+        json_data = json.load(f)
+    uri = json_data["uri"]
+    client = pymongo.MongoClient(uri)
+    db = client['ASRS-Cluster-0']
+    container_db = db["Containers"]
+    container_candidates = container_db.find({"status":{"$ne":"in grid"}})
+    exception_container_number = container_db.count_documents({"status":{"$ne":"in grid"}})
+    print_string = str(exception_container_number)+" containers in exception "
+    print_coler(print_string,"g")
+    for container_info in container_candidates:
+        container_id = container_info["container_id"]
+        status = container_info["status"]
+        #status : waiting , in_workstation , on_conveyor
+        if status == "waiting":
+            #status 為 waiting
+            container_set_status(container_id,"in grid")
+        elif status == "in_workstation":
+            #status 為 in_workstation
+            #選擇放回去的arm_id
+            index_putback = 1
+            while index_putback:
+                try:
+                    arm_id = container_putback(container_id)
+                    index_putback = 0
+                except:
+                    print_string = "restart find arm_id to putback container"
+                    print_coler(print_string,"g")
+                    index_putback = 1
+                
+            oi = get_time_string()
+            value = (0,oi,0,container_id)
+            lock_name = arm_id+ "_pid"
+            lock_val = 1
+            while lock_val:
+                lock_id = acquire_lock_with_timeout(r, lock_name, acquire_timeout= 2, lock_timeout= 100)
+                print("container_operate: waiting lock release " + lock_name)
+                if lock_id != False:
+                    lock_val = 0
+            redis_data_update_db(arm_id,value)
+            release_lock(r, lock_name, lock_id)
+            arms_work_transmit.delay(arm_id)
+        else:
+            #status 為 on_conveyor
+            #先到工作站再送回
+            workstation_get.delay(container_id)
+            #選擇放回去的arm_id
+            index_putback = 1
+            while index_putback:
+                try:
+                    arm_id = container_putback(container_id)
+                    index_putback = 0
+                except:
+                    print_string = "restart find arm_id to putback container"
+                    print_coler(print_string,"g")
+                    index_putback = 1
+                
+            oi = get_time_string()
+            value = (0,oi,0,container_id)
+            lock_name = arm_id+ "_pid"
+            lock_val = 1
+            while lock_val:
+                lock_id = acquire_lock_with_timeout(r, lock_name, acquire_timeout= 2, lock_timeout= 100)
+                print("container_operate: waiting lock release " + lock_name)
+                if lock_id != False:
+                    lock_val = 0
+            redis_data_update_db(arm_id,value)
+            release_lock(r, lock_name, lock_id)
+            arms_work_transmit.delay(arm_id)
+
 '''workstation function'''
 def workstation_assign():
     #指派工作站ＩＤ (選擇工作量最少的工作站)
@@ -2007,7 +2079,25 @@ def workstation_free(workstation_id):
         return False
     else:
         return True
- 
+
+def workstation_exception():
+    with open('參數檔.txt') as f:
+        json_data = json.load(f)
+    uri = json_data["uri"]
+    client = pymongo.MongoClient(uri)
+    db = client['ASRS-Cluster-0']
+    workstation_db = db["Workstations"]
+    workstation_candidates = workstation_db.find({"work":{"$ne":{}}})
+    for wi in workstation_candidates:
+        workstation_id = wi["workstation_id"]
+        ws_work = wi["work"]
+        for order_id , pick_content in ws_work.items():
+            ws_work[order_id]["container"] = {}
+        ws_workloads = len(ws_work)
+        myquery = { "workstation_id": workstation_id }
+        newvalues = { "$set": { "work": ws_work,"workloads":ws_workloads}}
+        workstation_db.update(myquery,newvalues)
+
 '''redis function'''
 def redis_init():
     #從storage裡面撈出資訊，並初始化redis內資訊
