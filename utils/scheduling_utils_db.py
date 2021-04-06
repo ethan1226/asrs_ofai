@@ -312,19 +312,22 @@ def order_assign(index_label,index,num):
     for order_i in order_db.find({"$and":[{index_label:index},{"status":"processing"}]}):
         order_dict[order_i["order_id"]] = order_i
     output = []
-    for k,v in order_dict.items():
+    for order_id,order_info in order_dict.items():
         if num<=0:
             break
         else:
+            #判斷訂單商品目前是否在倉庫裡有貨
             satisfaction = True
-            for pid,qt in v["contents"].items():
+            for pid,qt in order_info["contents"].items():
                 if container_db.count_documents({"contents."+pid:{'$exists':"true"},"status":"in grid"}) == 0:
+                    print_string = "In order_assign order_id: "+str(order_id)+" pid: "+str(pid)+" not exists in grid"
+                    print_coler(print_string,"g")
                     satisfaction = False
                     break
             if satisfaction:
-                output.append(k)
-                order_dict[k]["status"] = "workstation"
-                myquery = { "product_name": k }
+                output.append(order_id)
+                order_dict[order_id]["status"] = "workstation"
+                myquery = { "order_id": order_id }
                 newvalues = { "$set": { "status": "workstation"}}
                 order_db.update(myquery,newvalues)
                 num -= 1
@@ -344,14 +347,14 @@ def order_assign_crunch(index_label,index,num):
     #統計訂單相同物品個數
     pid_order = {}
     pid_amount = {}
-    for k,v in order_dict.items():
-        for k_v,v_v in v["contents"].items():
-            if k_v not in pid_order:
-                pid_order[k_v] = {k}
-                pid_amount[k_v] = 1
+    for order_id,order_info in order_dict.items():
+        for pid,pqt in order_info["contents"].items():
+            if pid not in pid_order:
+                pid_order[pid] = {order_id}
+                pid_amount[pid] = 1
             else:
-                pid_order[k_v].update({k})
-                pid_amount[k_v] += 1
+                pid_order[pid].update({order_id})
+                pid_amount[pid] += 1
     pid_amount_list = sorted(pid_amount.items(),key=lambda item:item[1],reverse=True)
     full = False
     output = []
@@ -364,8 +367,8 @@ def order_assign_crunch(index_label,index,num):
                     break
                 else:
                     output.append(order_id)
-                    order_dict[k]["status"] = "workstation"
-                    myquery = { "product_name": k }
+                    order_dict[order_id]["status"] = "workstation"
+                    myquery = { "order_id": order_id }
                     newvalues = { "$set": { "status": "workstation"}}
                     order_db.update(myquery,newvalues)
                     num -= 1
@@ -2088,6 +2091,7 @@ def workstation_free(workstation_id):
         return True
 
 def workstation_exception():
+    
     with open('參數檔.txt') as f:
         json_data = json.load(f)
     uri = json_data["uri"]
@@ -2095,6 +2099,8 @@ def workstation_exception():
     db = client['ASRS-Cluster-0']
     workstation_db = db["Workstations"]
     workstation_candidates = workstation_db.find({"work":{"$ne":{}}})
+    print_string = "workstation in exception "
+    print_coler(print_string,"g")
     for wi in workstation_candidates:
         workstation_id = wi["workstation_id"]
         ws_work = wi["work"]
