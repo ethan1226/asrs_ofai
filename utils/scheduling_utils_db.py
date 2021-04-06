@@ -307,6 +307,7 @@ def order_assign(index_label,index,num):
     client = pymongo.MongoClient(uri)
     db = client['ASRS-Cluster-0']
     order_db = db['Orders']
+    container_db = db['Containers']
     order_dict = {}
     for order_i in order_db.find({"$and":[{index_label:index},{"status":"processing"}]}):
         order_dict[order_i["order_id"]] = order_i
@@ -315,12 +316,18 @@ def order_assign(index_label,index,num):
         if num<=0:
             break
         else:
-            output.append(k)
-            order_dict[k]["status"] = "workstation"
-            myquery = { "product_name": k }
-            newvalues = { "$set": { "status": "workstation"}}
-            order_db.update(myquery,newvalues)
-            num -= 1
+            satisfaction = True
+            for pid,qt in v["contents"].items():
+                if container_db.count_documents({"contents."+pid:{'$exists':"true"},"status":"in grid"}) == 0:
+                    satisfaction = False
+                    break
+            if satisfaction:
+                output.append(k)
+                order_dict[k]["status"] = "workstation"
+                myquery = { "product_name": k }
+                newvalues = { "$set": { "status": "workstation"}}
+                order_db.update(myquery,newvalues)
+                num -= 1
     return output
 
 def order_assign_crunch(index_label,index,num):
