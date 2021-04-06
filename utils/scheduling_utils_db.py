@@ -1640,7 +1640,7 @@ def container_putback(container_id):
         arm_elevator[arms_key] = elevator_workloads[arm_id[0]]
     
     for arms_key in arm_key_all:
-        #計算個手臂分數
+        #統計各手臂相關分數
         if arm_workloads[max(arm_workloads, key=arm_workloads.get)] == 0:
             arm_score_workloads = arm_workloads[arms_key]
         else:
@@ -1655,15 +1655,15 @@ def container_putback(container_id):
             arm_score_elevator = arm_elevator[arms_key]
         else:
             arm_score_elevator = arm_elevator[arms_key]/arm_elevator[max(arm_elevator, key=arm_elevator.get)]
-            
-        
+        #手臂總分數 = 手臂工作量 + 手臂內商品週轉率 + 手臂電梯目前使用量
+        arm_score[arms_key] = arm_score_workloads + arm_score_turnover + arm_score_elevator
         # if arm_prdreserve[max(arm_prdreserve, key=arm_prdreserve.get)] == 0:
         #     arm_score_prdreserve = arm_prdreserve[arms_key]
         # else:
         #     arm_score_prdreserve = arm_prdreserve[arms_key]/arm_prdreserve[max(arm_prdreserve, key=arm_prdreserve.get)]
         
         # arm_score[arms_key] = arm_score_workloads + arm_score_turnover + arm_score_prdreserve
-        arm_score[arms_key] = arm_score_workloads + arm_score_turnover + arm_score_elevator
+        
     arm_score_list = sorted(arm_score.items(),key=lambda item:item[1])
     for list_n in range(len(arm_score_list)):
         arms_data = redis_dict_get(arm_score_list[list_n][0])
