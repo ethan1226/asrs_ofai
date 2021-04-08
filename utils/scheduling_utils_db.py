@@ -1297,7 +1297,83 @@ def arm_work_status(arm_id):
     arms_status[arm_id]["container"] = storage_db.count_documents({"$and":[{"arm_id":arm_id},{"contents":{"$ne":{}}}]})
     arms_status[arm_id]["empty"] = total - arms_status[arm_id]["container"]
     return arms_status
+
+def arms_arrange(arm_id):
+    #arm_id 上的container重新排序
+    G = redis_dict_get("G")
+    nodes = redis_dict_get("nodes")
+    dists = redis_dict_get("dists")
+    with open('參數檔.txt') as f:
+        json_data = json.load(f)
+    uri = json_data["uri"]    
+    client = pymongo.MongoClient(uri)
+    db = client['ASRS-Cluster-0']
+    storage_db = db["Storages"]
+    container_db = db["Containers"]
+    st = storage_db.find({"arm_id":arm_id})
+    #此 arm_id 內 storage 資訊
+    storage_arm = {}
+    #排序 container 的 turnover 使用
+    container_turnover = []
+    #統計 container 數量
+    container_num = 0
+    for si in st:
+        storage_id = si["storage_id"]
+        storage_id_eval = eval(storage_id)
+        storage_arm[storage_id] = si
+        grid_id = storage_id_eval[0]
+        storage_arm[storage_id]["grid_id"] = grid_id
+        coordinates = nodes[grid_id]['coordinates']
+        storage_arm[storage_id]["coordinates"] = {"x":coordinates[0],"y":coordinates[1],"z":coordinates[2]}
+        if storage_arm[storage_id]["container_id"] == "":
+            storage_arm[storage_id]["turnover"] = 0
+        else:
+            container_id = storage_arm[storage_id]["container_id"]
+            storage_arm[storage_id]["turnover"] = container_db.find_one({"container_id":container_id})["turnover"]
+            container_turnover.append([container_id,storage_arm[storage_id]["turnover"]])
+            container_num += 1
+    #arm_id上所有的 grid
+    grid_list = []
+    storage_id_list = []
+    for k,v in storage_arm.items():
+        k_eval = eval(k)
+        grid_list.append(k_eval[0])
+        storage_id_list.append(k)
+    grid_list = list(np.unique(grid_list))
     
+    #照位置排序 先排內層在排外層 依序由門口近到遠
+    storage_location = []
+    for layer in range(1,-1,-1):
+        for n in range(int(len(grid_list)/2)):
+            for i in range(4):
+                storage_location.append(str((grid_list[n],(layer,i,0))))
+                storage_location.append(str((grid_list[n+int(len(grid_list)/2)],(layer,i,0))))
+    
+    #排序 container 的 turnover
+    container_turnover_sort = sorted(container_turnover, key=lambda s: s[1],reverse = True)
+    
+    #將排序老的container放入 先放前兩個的 1/4 在內層 再放剩餘的在外層 保證外層比內層多 
+    total_row = len(container_turnover_sort)//4
+    upper_container = []
+    lower_container = []
+    for container in container_turnover_sort[0:total_row*2]:
+        upper_container.append(container[0])
+    for container in container_turnover_sort[total_row*2:]:
+        lower_container.append(container[0])
+    arrange_location = []
+    for n in range(len(upper_container)):
+        arrange_location.append([storage_location[n],upper_container[n]])
+    for n in range(len(lower_container)):
+        arrange_location.append([storage_location[n+int(len(storage_location)/2)],lower_container[n]])
+    print("arm_id: "+arm_id+" 開始整理")
+    while len(arrange_location)>0:
+        arrange_info = arrange_location.pop()
+        storage_id = arrange_info[0]
+        container_id = arrange_info[1]
+        print("剩餘待整理數量為: "+str(len(arrange_location))+" 準備整理contianer id為: "+str(container_id))
+        if storage_db.find_one({"storage_id":storage_id})["container_id"] != container_id:
+            storage_empty(storage_id)
+            container_goto(container_id,storage_id)    
 
 def elevator_workloads(arm_id):
     arm_id_eval = eval(arm_id)
@@ -1465,6 +1541,173 @@ def storage_interchange(src_storage_id,dst_storage_id):
     storage_dict.update(myquery,newvalues)  
     
 
+def storage_empty(storage_id,ban = []):
+    '''將目標storage_id 位置清空 清除container不放入ban位置中'''
+    ##redis get
+    G = redis_dict_get("G")
+    nodes = redis_dict_get("nodes")
+    dists = redis_dict_get("dists")
+    with open('參數檔.txt') as f:
+        json_data = json.load(f)
+    uri = json_data["uri"]    
+    client = pymongo.MongoClient(uri)
+    db = client['ASRS-Cluster-0']
+    storage_db = db["Storages"]
+    storage_id_eval = eval(storage_id)
+    grid_id = storage_id_eval[0]
+    relative_coords = storage_id_eval[1]
+    #目標storage_id資訊
+    storage_target = storage_db.find_one({"storage_id":storage_id})
+    container_id = storage_target["container_id"]
+    if container_id != "":
+        #若有container_id表示還未清空
+        arm_id = storage_target['arm_id']
+        #找同一機器手臂沒有放container的位置
+        spot_candidates_ptr = storage_db.find({"arm_id":str(arm_id),'container_id':""})
+        spot_candidates = []
+        if relative_coords[0] == 1:
+            #在上層直接將目標storage_id移出
+            #收集所有可以放入的空位
+            for sc in spot_candidates_ptr:
+                if (sc['grid_id'] == grid_id and relative_coords[1] == sc['relative_coords']['ry']) or sc['storage_id'] in ban :
+                    #若grid_id一樣又'ry'一樣表示是他上層
+                    continue
+                sc_key = json.loads(sc['storage_id'].replace('(', '[').replace(')', ']'))
+                spot_candidates.append(sc_key)
+            #計算最短路徑並排序
+            major_list = G.shortest_paths(source = grid_id, target = [s[0] for s in spot_candidates], weights = dists)[0]
+            #排序各點所需移動的路徑長
+            spot_candidates_sort = []
+            for spot_i in range(len(major_list)):
+                spot_candidates_sort.append([spot_candidates[spot_i],major_list[spot_i]])
+            spot_candidates_sort = sorted(spot_candidates_sort, key=lambda s: s[1])
+            #選擇距離最短的位置當作移動目標
+            moveto = spot_candidates_sort[0][0]
+            moveto_storage_id = str((moveto[0],tuple(moveto[1])))
+            #判斷空位是上層還是下層
+            if moveto[1][0] == 1:
+                #空位在上層，判斷下層是否有東西
+                lower = storage_db.count_documents({'grid_id':moveto[0],
+                                                    'relative_coords.ry':moveto[1][1],
+                                                    'relative_coords.rx':0,
+                                                    'container_id':{'$ne':""}})
+                if lower == 0:
+                    #空位下層有東西，放入下層
+                    moveto[1][0] = 0
+                    moveto_storage_id = str((moveto[0],tuple(moveto[1])))
+            ##將目標storage_id 移到 moveto 修改資料庫
+            container_moveto(container_id,moveto_storage_id)
+            storage_interchange(storage_id,moveto_storage_id)
+            
+        else:
+            #在下層先判斷是否上層有東西
+            #上層物品
+            upper_num = storage_db.count_documents({'grid_id':grid_id,
+                                                    'relative_coords.ry':relative_coords[1],
+                                                    'relative_coords.rx':1,
+                                                    'container_id':{'$ne':""}})
+            if upper_num == 0 :
+                #上層沒有東西,直接將目標storage_id移出
+                #收集所有可以放入的空位
+                for sc in spot_candidates_ptr:
+                    if (sc['grid_id'] == grid_id and relative_coords[1] == sc['relative_coords']['ry']) or sc['storage_id'] in ban:
+                        #若grid_id一樣又'ry'一樣表示是他上層
+                        continue
+                    sc_key = json.loads(sc['storage_id'].replace('(', '[').replace(')', ']'))
+                    spot_candidates.append(sc_key)
+                #計算最短路徑並排序
+                major_list = G.shortest_paths(source = grid_id, target = [s[0] for s in spot_candidates], weights = dists)[0]
+                #排序各點所需移動的路徑長
+                spot_candidates_sort = []
+                for spot_i in range(len(major_list)):
+                    spot_candidates_sort.append([spot_candidates[spot_i],major_list[spot_i]])
+                spot_candidates_sort = sorted(spot_candidates_sort, key=lambda s: s[1])
+                #選擇距離最短的位置當作移動目標
+                moveto = spot_candidates_sort[0][0]
+                moveto_storage_id = str((moveto[0],tuple(moveto[1])))
+                #判斷空位是上層還是下層
+                if moveto[1][0] == 1:
+                    #空位在上層，判斷下層是否有東西
+                    lower = storage_db.count_documents({'grid_id':moveto[0],
+                                                        'relative_coords.ry':moveto[1][1],
+                                                        'relative_coords.rx':0,
+                                                        'container_id':{'$ne':""}})
+                    if lower == 0:
+                        #空位下層有東西，放入下層
+                        moveto[1][0] = 0
+                        moveto_storage_id = str((moveto[0],tuple(moveto[1])))
+                ##將目標storage_id 移到 moveto 修改資料庫
+                container_moveto(container_id,moveto_storage_id)
+                storage_interchange(storage_id,moveto_storage_id)
+            else:
+                #上層有東西,先移開上層後在移出
+                upper = storage_db.find({'grid_id':grid_id,
+                                         'relative_coords.ry':relative_coords[1],
+                                         'relative_coords.rx':1,
+                                         'container_id':{'$ne':""}})
+                #上層資訊
+                for u_i in upper:
+                    upper_container = u_i['container_id']
+                    upper_storage_id = u_i['storage_id']
+                #收集所有可以放入的空位
+                for sc in spot_candidates_ptr:
+                    if (sc['grid_id'] == grid_id and relative_coords[1] == sc['relative_coords']['ry']) or sc['storage_id'] in ban:
+                        #若grid_id一樣又'ry'一樣表示是他上層
+                        continue
+                    sc_key = json.loads(sc['storage_id'].replace('(', '[').replace(')', ']'))
+                    spot_candidates.append(sc_key)
+                #計算最短路徑並排序
+                major_list = G.shortest_paths(source = grid_id, target = [s[0] for s in spot_candidates], weights = dists)[0]
+                #排序各點所需移動的路徑長
+                spot_candidates_sort = []
+                for spot_i in range(len(major_list)):
+                    spot_candidates_sort.append([spot_candidates[spot_i],major_list[spot_i]])
+                spot_candidates_sort = sorted(spot_candidates_sort, key=lambda s: s[1])
+                #選擇距離最短的位置當作移動目標
+                moveto = spot_candidates_sort[0][0]
+                moveto_storage_id = str((moveto[0],tuple(moveto[1])))
+                #判斷空位是上層還是下層
+                if moveto[1][0] == 1:
+                    #空位在上層，判斷下層是否有東西
+                    lower = storage_db.count_documents({'grid_id':moveto[0],
+                                                        'relative_coords.ry':moveto[1][1],
+                                                        'relative_coords.rx':0,
+                                                        'container_id':{'$ne':""}})
+                    if lower == 0:
+                        #空位下層有東西，放入下層
+                        moveto[1][0] = 0
+                        moveto_storage_id = str((moveto[0],tuple(moveto[1])))
+                
+                #將upper_container 移到 moveto 修改資料庫
+                container_moveto(upper_container,moveto_storage_id)
+                storage_interchange(upper_storage_id,moveto_storage_id)
+                #選擇將目標 storage_id 移出的 moveto
+                i = 1
+                moveto = spot_candidates_sort[i][0]
+                moveto_storage_id = str((moveto[0],tuple(moveto[1])))
+                while storage_db.find_one({"storage_id":moveto_storage_id})["container_id"] != "" and i<len(spot_candidates_sort):
+                    i += 1
+                    moveto = spot_candidates_sort[i][0]
+                    moveto_storage_id = str((moveto[0],tuple(moveto[1])))
+                #判斷空位是上層還是下層
+                if moveto[1][0] == 1:
+                    #空位在上層，判斷下層是否有東西
+                    lower = storage_db.count_documents({'grid_id':moveto[0],
+                                                        'relative_coords.ry':moveto[1][1],
+                                                        'relative_coords.rx':0,
+                                                        'container_id':{'$ne':""}})
+                    if lower == 0:
+                        #空位下層有東西，放入下層
+                        moveto[1][0] = 0
+                        moveto_storage_id = str((moveto[0],tuple(moveto[1])))
+                
+                #將upper_container 移到 moveto 修改資料庫
+                container_moveto(container_id,moveto_storage_id)
+                storage_interchange(storage_id,moveto_storage_id)
+                print("storage_id: "+storage_id+" is empty")
+    else:
+        #若無container_id表示已清空
+        print("storage_id: "+storage_id+" is empty")
 
 '''container function'''
 
@@ -1748,6 +1991,94 @@ def container_movement():
     db = client['ASRS-Cluster-0']
     container_db = db["Containers"]
     return container_db.count_documents({"$or":[{"status":"on_conveyor"},{"status":"in_workstation"},{"status":"waiting"}]})
+
+def container_goto(container_id,storage_id):
+    '''將 container_id 移至 storage_id ,storage_id已清空的狀態'''
+    ##redis get
+    G = redis_dict_get("G")
+    nodes = redis_dict_get("nodes")
+    dists = redis_dict_get("dists")
+    with open('參數檔.txt') as f:
+        json_data = json.load(f)
+    uri = json_data["uri"]    
+    client = pymongo.MongoClient(uri)
+    db = client['ASRS-Cluster-0']
+    storage_db = db["Storages"]
+    #先判斷目標container_id上層還是下層
+    ctr_storage_info = storage_db.find_one({"container_id":container_id})
+    ctr_storage_id = ctr_storage_info["storage_id"]
+    ctr_storage_id_eval = eval(ctr_storage_id)
+    ctr_relative_coords = ctr_storage_id_eval[1]
+    grid_id = ctr_storage_id_eval[0]
+    arm_id = ctr_storage_info["arm_id"]
+    if ctr_relative_coords[0] == 1:
+        #目標container_id為上層，直接移至 storage_id
+        print("container_id為上層，直接移至storage_id")
+        container_moveto(container_id,storage_id)
+        storage_interchange(ctr_storage_id,storage_id)
+    else:
+        #目標container_id為下層，判斷是否上層有container
+        upper_num = storage_db.count_documents({'grid_id':grid_id,
+                                                'relative_coords.ry':ctr_relative_coords[1],
+                                                'relative_coords.rx':1,
+                                                'container_id':{'$ne':""}})
+        if upper_num == 0:
+            #若無直接移至 storage_id
+            container_moveto(container_id,storage_id)
+            storage_interchange(ctr_storage_id,storage_id)
+        else:
+            #若有先移開上層container，再將目標container_id移至 storage_id
+            upper = storage_db.find({'grid_id':grid_id,
+                                     'relative_coords.ry':ctr_relative_coords[1],
+                                     'relative_coords.rx':1,
+                                     'container_id':{'$ne':""}})
+            ##上層container info
+            for u_i in upper:
+                upper_container = u_i['container_id']
+                upper_storage_id = u_i['storage_id']
+            #將storage_id加入 ban 並判斷storage_id 是上層或下層 
+            storage_id_eval = eval(storage_id)
+            if storage_id_eval[1][0] == 1:  
+                #storage_id在上層所以ban只有storage_id
+                ban = [storage_id]
+            else:
+                #storage_id在下層所以ban有storage_id與storage_id的上層位置
+                ban = [storage_id,str((storage_id_eval[0],(1,storage_id_eval[1][1],storage_id_eval[1][2])))]
+            #收集所有可以放入的空位
+            spot_candidates_ptr = storage_db.find({"arm_id":str(arm_id),'container_id':""})
+            spot_candidates = []
+            for sc in spot_candidates_ptr:
+                if sc['storage_id'] in ban:
+                    continue
+                sc_key = json.loads(sc['storage_id'].replace('(', '[').replace(')', ']'))
+                spot_candidates.append(sc_key)
+            #計算最短路徑並排序
+            major_list = G.shortest_paths(source = grid_id, target = [s[0] for s in spot_candidates], weights = dists)[0]
+            spot_candidates_sort = []
+            for spot_i in range(len(major_list)):
+                spot_candidates_sort.append([spot_candidates[spot_i],major_list[spot_i]])
+            spot_candidates_sort = sorted(spot_candidates_sort, key=lambda s: s[1])
+            #選擇距離最短的位置當作移動目標
+            moveto = spot_candidates_sort[0][0]
+            moveto_storage_id = str((moveto[0],tuple(moveto[1])))
+            #判斷空位是上層還是下層
+            if moveto[1][0] == 1:
+                #空位在上層，判斷下層是否有東西
+                lower = storage_db.count_documents({'grid_id':moveto[0],
+                                                    'relative_coords.ry':moveto[1][1],
+                                                    'relative_coords.rx':0,
+                                                    'container_id':{'$ne':""}})
+                if lower == 0:
+                    #空位下層有東西，放入下層
+                    moveto[1][0] = 0
+                    moveto_storage_id = str((moveto[0],tuple(moveto[1])))
+            #將upper_container 移到 moveto 修改資料庫
+            container_moveto(upper_container,moveto_storage_id)
+            storage_interchange(upper_storage_id,moveto_storage_id)
+            
+            #將container_id移至 storage_id
+            container_moveto(container_id,storage_id)
+            storage_interchange(ctr_storage_id,storage_id)
 
 def container_exception():
     r = redis.Redis(host='localhost', port=6379, decode_responses=False)

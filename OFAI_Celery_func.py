@@ -366,13 +366,17 @@ def arms_pick(self, container_id):
             print("container_id: "+str(container_id)+" grid_id: "+str(grid_id)+" arm_id: "+str((nodes[grid_id]['aisle_index'][0], nodes[grid_id]['aisle_index'][2])))
             arm_id = (nodes[grid_id]['aisle_index'][0], nodes[grid_id]['aisle_index'][2])
             spot_candidates_ptr = storage_db.find({"arm_id":str(arm_id),'container_id':""})
+            #收集所有可以放入的空位
             spot_candidates = []
             for sc in spot_candidates_ptr:
                 if sc['grid_id'] == grid_id and container_info['relative_coords']['ry'] == sc['relative_coords']['ry']:
+                    #若grid_id一樣又'ry'一樣表示是他上層
                     continue
                 sc_key = json.loads(sc['storage_id'].replace('(', '[').replace(')', ']'))
                 spot_candidates.append(sc_key)
+            #計算最短路徑
             major_list = G.shortest_paths(source = grid_id, target = [s[0] for s in spot_candidates], weights = dists)[0]
+            #選擇距離最短的位置當作移動目標
             moveto = spot_candidates[major_list.index(min(major_list))]
             moveto = str((moveto[0],tuple(moveto[1])))
             #將upper_container 移到 moveto 修改資料庫
