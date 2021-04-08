@@ -379,6 +379,17 @@ def arms_pick(self, container_id):
             #選擇距離最短的位置當作移動目標
             moveto = spot_candidates[major_list.index(min(major_list))]
             moveto = str((moveto[0],tuple(moveto[1])))
+            #判斷空位是上層還是下層
+            if moveto[1][0] == 1:
+                #空位在上層，判斷下層是否有東西
+                lower = storage_db.count_documents({'grid_id':moveto[0],
+                                                    'relative_coords.ry':moveto[1][1],
+                                                    'relative_coords.rx':0,
+                                                    'container_id':{'$ne':""}})
+                if lower == 0:
+                    #空位下層有東西，放入下層
+                    moveto[1][0] = 0
+                    moveto_storage_id = str((moveto[0],tuple(moveto[1])))
             #將upper_container 移到 moveto 修改資料庫
             container_moveto(upper_container,moveto)
             storage_interchange(upper_storage_id,moveto)
