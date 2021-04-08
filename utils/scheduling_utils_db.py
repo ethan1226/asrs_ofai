@@ -1370,9 +1370,12 @@ def arms_arrange(arm_id):
         arrange_info = arrange_location.pop()
         storage_id = arrange_info[0]
         container_id = arrange_info[1]
-        print("剩餘待整理數量為: "+str(len(arrange_location))+" 準備整理contianer id為: "+str(container_id))
+        print("剩餘待整理數量為: "+str(len(arrange_location))+" 準備整理 contianer id: "+str(container_id)+" 放入 storage_id: "+str(storage_id))
         if storage_db.find_one({"storage_id":storage_id})["container_id"] != container_id:
+            print("準備清空 storage_id: "+str(storage_id))
             storage_empty(storage_id)
+            print("已清空 storage_id: "+str(storage_id))
+            print("將 container_id: "+str(container_id)+" 放入 storage_id: "+str(storage_id))
             container_goto(container_id,storage_id)    
 
 def elevator_workloads(arm_id):
