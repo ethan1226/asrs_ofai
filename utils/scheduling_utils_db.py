@@ -2309,54 +2309,54 @@ def workstation_pick_info(container_id):
     
     return workstation_id,order_id,pick
 
-def workstation_pick(container_id):
-    #工作站以從container撿取order所需物品
-    #刪除 workstation work內工作 container 資訊
-    print("in workstation_pick contaioner_id : "+container_id)
-    with open('參數檔.txt') as f:
-        json_data = json.load(f)
-    uri = json_data["uri"]
-    client = pymongo.MongoClient(uri)
-    db = client['ASRS-Cluster-0']
-    workstation_db = db["Workstations"]
-    work_info = workstation_db.aggregate([
-                         {'$addFields': {"workTransformed": {'$objectToArray': "$work"}}},
-                         {'$match': { 'workTransformed.v.container.'+container_id: {'$exists':1} }}
-                                     ])
-    for w_1 in work_info:
-        # print("in workstation_pick contaioner_id : ",container_id," w_1: ",w_1)
-        ws_work = w_1['work']
-        workstation_id = w_1['workstation_id']
-    # 找有哪些訂單有container
-    output_order_id_list = []
-    for order_id,order_pickup in ws_work.items():
-        for pick_container_id in order_pickup["container"]:
-            if container_id == pick_container_id:
-                #找出container在哪些張訂單號
-                output_order_id_list.append(order_id)
-    #刪除 container內要撿的商品並更新db
-    container_content_pick = {}
-    myquery = { "workstation_id": workstation_id}
-    for output_order_id in output_order_id_list:
-        for prd,pqt in ws_work[output_order_id]["container"][container_id].items():
-            ws_work[output_order_id]["prd"][prd]["qt"] -= pqt
-            container_content_pick[prd] = pqt
-            newvalues = { "$inc": { "work."+output_order_id+".prd."+prd+".qt":-pqt}}
-            #需求量撿完刪除訂單商品並更新db
-            if ws_work[output_order_id]["prd"][prd]["qt"] == 0:
-                ws_work[output_order_id]["prd"].pop(prd,None)
-                newvalues = { "$unset": { "work."+output_order_id+".prd."+prd:""}}
-            workstation_db.update(myquery,newvalues)
-    #撿完container後刪除並更新workstation_db
-    for output_order_id in output_order_id_list:
-        ws_work[output_order_id]["container"].pop(container_id,None)
-        newvalues = { "$unset": { "work."+output_order_id+".container."+container_id:""}}
-        workstation_db.update(myquery,newvalues)
-    #更新container_db
-    container_pick(container_id, container_content_pick)
-    #TODO container送回倉
-    print(" workstation_id: "+workstation_id+" order_id: "+str(output_order_id_list))
-    return str(output_order_id_list),workstation_id
+# def workstation_pick(container_id):
+#     #工作站以從container撿取order所需物品
+#     #刪除 workstation work內工作 container 資訊
+#     print("in workstation_pick contaioner_id : "+container_id)
+#     with open('參數檔.txt') as f:
+#         json_data = json.load(f)
+#     uri = json_data["uri"]
+#     client = pymongo.MongoClient(uri)
+#     db = client['ASRS-Cluster-0']
+#     workstation_db = db["Workstations"]
+#     work_info = workstation_db.aggregate([
+#                          {'$addFields': {"workTransformed": {'$objectToArray': "$work"}}},
+#                          {'$match': { 'workTransformed.v.container.'+container_id: {'$exists':1} }}
+#                                      ])
+#     for w_1 in work_info:
+#         # print("in workstation_pick contaioner_id : ",container_id," w_1: ",w_1)
+#         ws_work = w_1['work']
+#         workstation_id = w_1['workstation_id']
+#     # 找有哪些訂單有container
+#     output_order_id_list = []
+#     for order_id,order_pickup in ws_work.items():
+#         for pick_container_id in order_pickup["container"]:
+#             if container_id == pick_container_id:
+#                 #找出container在哪些張訂單號
+#                 output_order_id_list.append(order_id)
+#     #刪除 container內要撿的商品並更新db
+#     container_content_pick = {}
+#     myquery = { "workstation_id": workstation_id}
+#     for output_order_id in output_order_id_list:
+#         for prd,pqt in ws_work[output_order_id]["container"][container_id].items():
+#             ws_work[output_order_id]["prd"][prd]["qt"] -= pqt
+#             container_content_pick[prd] = pqt
+#             newvalues = { "$inc": { "work."+output_order_id+".prd."+prd+".qt":-pqt}}
+#             #需求量撿完刪除訂單商品並更新db
+#             if ws_work[output_order_id]["prd"][prd]["qt"] == 0:
+#                 ws_work[output_order_id]["prd"].pop(prd,None)
+#                 newvalues = { "$unset": { "work."+output_order_id+".prd."+prd:""}}
+#             workstation_db.update(myquery,newvalues)
+#     #撿完container後刪除並更新workstation_db
+#     for output_order_id in output_order_id_list:
+#         ws_work[output_order_id]["container"].pop(container_id,None)
+#         newvalues = { "$unset": { "work."+output_order_id+".container."+container_id:""}}
+#         workstation_db.update(myquery,newvalues)
+#     #更新container_db
+#     container_pick(container_id, container_content_pick)
+#     #TODO container送回倉
+#     print(" workstation_id: "+workstation_id+" order_id: "+str(output_order_id_list))
+#     return str(output_order_id_list),workstation_id
     
 
 def workstation_workend(self, workstation_id,order_id):

@@ -8,6 +8,7 @@ Created on Wed Jan 20 14:51:55 2021
 from utils.scheduling_utils_db import *
 
 from queue import PriorityQueue
+import celery
 from celery import Celery
 import redis
 import json
@@ -19,37 +20,6 @@ import pymongo
 broker = 'redis://127.0.0.1:6379'  
 backend = 'redis://127.0.0.1:6379/0'  
 OFAI_Celery_func = Celery('OFAI_Celery_func', broker=broker, backend=backend)
-
-'''
-workstation_tasks
-'''
-
-def order_assign(index_label,index,num):
-    with open('參數檔.txt') as f:
-        json_data = json.load(f)
-    uri = json_data["uri"]
-    try:
-        client = pymongo.MongoClient(uri)
-        db = client['ASRS-Cluster-0']
-    except:
-        Sigkill_func(self.request.id)
-    order_db = db['Orders']
-    order_dict = {}
-    for order_i in order_db.find({"$and":[{index_label:index},{"status":"processing"}]}):
-        order_dict[order_i["order_id"]] = order_i
-    output = []
-    for k,v in order_dict.items():
-        if num<=0:
-            break
-        else:
-            output.append(k)
-            myquery = { "order_id": k }
-            newvalues = { "$set": { "status": "workstation"}}
-            order_db.update(myquery,newvalues)
-            num -= 1
-    return output
-
-
 
 
 @OFAI_Celery_func.task(bind=True)
@@ -306,6 +276,13 @@ def arms_store(self, container_id,arm_id):
     #container_id 修改資訊(移動到storage_id & status to in grid)
     # print("container_id: "+container_id+" storage_id: "+storage_id)
     container_moveto(container_id,storage_id)
+    #container_work_append 登入container 儲存位置 儲存時間
+    value_name = "container_store_start_time"
+    content = datetime.datetime.now()
+    container_report_append.delay(container_id, value_name, content)
+    value_name = "container_store_end_time"
+    content = datetime.datetime.now()
+    container_report_append.delay(container_id, value_name, content)
     container_set_status(container_id,"in grid")
     #將 container_id 內商品更新 product
     product_push_container(container_id)
@@ -397,8 +374,57 @@ def arms_pick(self, container_id):
             container_set_status(container_id,'on_conveyor')
             container_grid(container_id,-1)
             storage_pop(container_id)
-    container_operate.delay(container_id)
-    print("Picking container: container_id: " + container_id + "'s state is changed to on_conveyor")
+            
+    #呼叫電梯，如果連接到電梯則設置電梯鎖
+    arm_id = (nodes[grid_id]['aisle_index'][0], nodes[grid_id]['aisle_index'][2])
+    elevator_grid_id = db["Storages"].find_one({"grid_id":grid_id})["elevator_id"]
+    elevator_number = str(arm_id[0])
+    elevator_lock_name = "ElevatorOut" + elevator_number
+    container_height = arm_id[1]
+    elevator_lock = False
+    while not elevator_lock:
+        print("連接電梯中..." + elevator_lock_name)
+        elevator_lock = acquire_lock_with_timeout(r, elevator_lock_name, acquire_timeout=2, lock_timeout=100000)
+        print_str = r.get(elevator_lock_name + "_task")
+        if print_str != None:
+            print(elevator_lock_name + "工作中，剩 " + str(print_str) + "秒完成")
+            #強制跳出
+            if float(print_str) <= 0:
+                break
+
+    #container_work_append 登入container 起始位置 揀取時間
+    workreport_key = container_id
+    value_name = "container_pick_time"
+    content = datetime.datetime.now()
+    container_report_append.delay(container_id, value_name, content)
+    value_name = "container_start_position"
+    content = grid_id
+    container_report_append.delay(container_id, value_name, content)
+    value_name = 'date'
+    content = json_data['index']
+    container_report_append.delay(container_id, value_name, content)
+
+
+            
+    if not elevator_lock:
+        elevator_lock_byte = r.get(elevator_lock_name + "key")
+        if elevator_lock_byte != None:
+            elevator_lock = elevator_lock_byte.decode('ascii')
+            result = release_lock(r, elevator_lock_name, elevator_lock)
+            elevator_lock = acquire_lock_with_timeout(r, elevator_lock_name, acquire_timeout=2, lock_timeout=100000)    
+    elevator_moving_time = container_height / elevator_speed / acc_rate
+    arm_distance = G.shortest_paths(source = grid_id, target = elevator_grid_id, weights = dists)[0]
+    arm_moving_time = arm_distance[0] / arm_speed / acc_rate
+    waiting_time = max(arm_moving_time, elevator_moving_time)
+    print("等電梯"+ str(waiting_time) +"秒後來取貨 " +  str(arm_id) + " container_id:" + container_id)
+    start_time = datetime.datetime.now()
+    result = waiting_func(waiting_time, start_time)
+    while not result[0]:
+        result = waiting_func(waiting_time, start_time)
+        print(elevator_lock_name + "等電梯" + str(result[1]) + "秒後來取貨")
+
+    elevator_pick_move.delay(elevator_lock_name, container_id, container_height)
+    print("貨送到電梯上 " +  elevator_lock_name + " container_id:" + container_id)
 
 
 @OFAI_Celery_func.task(bind=True)
@@ -458,6 +484,10 @@ robot_arm_tasks
 def workstation_get(self, container_id):
     r = redis.Redis(host='localhost', port=6379, decode_responses=False)
     r.set("celery-task-meta-" + self.request.id, self.request.id)
+    #container_work_append 登入container 抵達工作站時間
+    value_name = "container_arrive_time"
+    content = datetime.datetime.now()
+    container_report_append.delay(container_id, value_name, content)
     # 工作站收到container
     container_set_status(container_id,'in_workstation')
 
@@ -504,6 +534,29 @@ def workstation_workend(self, workstation_id,order_id):
             workstation_db.update(myquery,newvalues)
             #判斷是否工作站工作沒有工作
             if workstation_free(workstation_id):
+                #將20張訂單的container工作紀錄存起來，並把相關的key刪了以儲存新訂單使用同個container的紀錄
+                all_keys_b = r.keys()
+                for key in all_keys_b:
+                    if key.decode("ascii").find("report_") != -1:
+                        container_key = key.decode("ascii")
+                        container_id = container_key[7:]
+                        
+                        check_component = False
+                        while not check_component:
+                            container_report = r.get(container_key)
+                            container_report = dill.loads(container_report)
+                            if len(container_report) == 7:
+                                check_component = True
+                            else:
+                                print("waiting container working record")
+                                start_time = datetime.datetime.now()
+                                waiting_func(2, start_time)
+                        print("workend_record: " + container_id)
+                        print(container_report)
+                        workreport_append(container_report, container_id)
+                        r.delete(container_key)
+                        print("workend delete key" + container_key)
+                        
                 with open('參數檔.txt') as f:
                     json_data = json.load(f)
                 index_label = json_data["index_label"]
@@ -567,3 +620,198 @@ robot_arm_tasks
 def Sigkill_func(self, task_id):
     celery.task.control.revoke(task_id, terminate=True, signal='SIGKILL')
     return True
+
+@OFAI_Celery_func.task(bind=True, soft_time_limit= 86400, time_limit= 86400)
+def elevator_pick_move(self, elevator_lock_name, container_id, container_height):
+    try:
+        print("elevator_pick_move收到container " + str(container_id))
+        r = redis.Redis(host='localhost', port=6379, decode_responses=False)
+        with open('參數檔.txt') as f:
+            json_data = json.load(f)
+        acc_rate = json_data["acc_rate"]
+        elevator_speed = json_data["elevator_speed"]
+        moving_time = float(container_height) / elevator_speed / acc_rate
+        print(" 電梯" + elevator_lock_name + "運送中，此任務耗時"+ str(moving_time) +"秒")
+        start_time = datetime.datetime.now()
+        result = waiting_func(moving_time, start_time)
+        while not result[0]:
+            result = waiting_func(moving_time, start_time)
+            r.set(elevator_lock_name + "_task", result[1])
+
+        #送到輸送帶上，更改container
+        elevator_number = elevator_lock_name[-1]
+        conveyor_move.delay(container_id, elevator_number)
+        #解除電梯鎖
+        elevator_lock_byte = r.get(elevator_lock_name + "key")
+        elevator_lock = elevator_lock_byte.decode('ascii')
+        result = release_lock(r, elevator_lock_name, elevator_lock)
+        time.sleep(1)
+        print("解除電梯鎖: " + str(elevator_lock) + " 電梯編號：" + elevator_lock_name)
+        print("Picking container: container_id: " + container_id + "'s state is changed to on_conveyor")
+    except:
+        print("elevator_pick_move error")
+
+
+@OFAI_Celery_func.task(bind=True, soft_time_limit= 86400, time_limit= 86400)
+def conveyor_move(self, container_id, elevator_number):
+    with open('參數檔.txt') as f:
+        json_data = json.load(f)
+    acc_rate = json_data["acc_rate"]
+    
+    #計算運輸時間
+    transport_time = int(elevator_number) * 20 / acc_rate
+    
+    #模擬運輸時間
+    start_time = datetime.datetime.now()
+    result = waiting_func(transport_time, start_time)
+    while not result[0]:
+        result = waiting_func(transport_time, start_time)
+
+    print("Picking container: container_id: " + container_id + "'s state is on_workstation")
+    #送到工作站的container
+    container_operate.delay(container_id)
+    
+@OFAI_Celery_func.task(bind=True, soft_time_limit= 86400, time_limit= 86400)
+def waiting_func(self, waiting_secs, start_time):
+    with open('參數檔.txt') as f:
+        json_data = json.load(f)
+    acc_rate = json_data["acc_rate"]
+    #start_time = datetime.datetime.now()
+    end_time = datetime.datetime.now()
+    remain_time = waiting_secs - (end_time - start_time).total_seconds()
+    if remain_time > 0:
+        return [False, remain_time]
+    else:
+        return [True, remain_time]
+
+
+
+@OFAI_Celery_func.task(bind=True, soft_time_limit= 86400, time_limit= 86400)
+def container_report_append(self, container_id, value_name, content):
+    r = redis.Redis(host='localhost', port=6379, decode_responses=False)
+    lock_name = "container_report" + container_id
+    lock_id = acquire_lock_with_timeout(r, lock_name, acquire_timeout=2, lock_timeout= 86400)
+    while not lock_id:
+        lock_id = acquire_lock_with_timeout(r, lock_name, acquire_timeout=2, lock_timeout= 86400)
+    print("container_report_append locked " + lock_id)
+    if r.exists("report_" + container_id) == 1:
+        container_report = r.get("report_" + container_id)
+        container_report = dill.loads(container_report)
+        if value_name != 'order_info':
+            container_report[value_name] = content
+        else:
+            if "order_info" in container_report:
+                order_info = container_report["order_info"]
+                order_info.append(content)
+                container_report["order_info"] = order_info
+            else:
+                order_info = []
+                order_info.append(content)                
+                container_report["order_info"] = order_info
+    else:
+        container_report = {}
+        if value_name != 'order_info':
+            report_content = {}
+            container_report[value_name] = content
+        else:
+            order_info = []
+            order_info.append(content)
+            container_report["order_info"] = order_info
+            
+    print("set container_report")
+    print(container_id)
+    print(container_report)
+    r.set("report_" + container_id,dill.dumps(container_report))
+    print("container_report_append release_lock " + lock_id)
+    release_lock(r, lock_name, lock_id)
+
+@OFAI_Celery_func.task(bind=True, soft_time_limit= 86400, time_limit= 86400)
+def workreport_append(self, container_report, container_id):
+    r = redis.Redis(host='localhost', port=6379, decode_responses=False)
+# =============================================================================
+#     lock_id = acquire_lock_with_timeout(r, "workreport_append", acquire_timeout=2, lock_timeout= 86400)
+#     while not lock_id:
+#         lock_id = acquire_lock_with_timeout(r, "workreport_append", acquire_timeout=2, lock_timeout= 86400)
+# =============================================================================
+    if r.exists("workreport") == 1:
+        workreport = r.get("workreport")
+        workreport = dill.loads(workreport)
+    else:
+        workreport = {}
+        
+    order_id_list = container_report["order_info"]
+    print(container_report)
+    for order_info in order_id_list:
+        order_id = order_info[0]
+        product_id = order_info[1]
+        pick_num = order_info[2]
+        pick_time = order_info[3]
+        report_key = order_info
+        content = container_report
+        content["container_id"] = container_id
+        print(order_info)
+        #content.pop('order_info')
+        workreport[str(report_key)] = content
+
+    r.set("workreport", dill.dumps(workreport))
+    #release_lock(r, "workreport_append", lock_id)
+    print("workreport_append order_id_list: " + str(order_id_list) + " with container_id: " + container_id)
+    
+def workstation_pick(container_id):
+    #工作站以從container撿取order所需物品
+    #刪除 workstation work內工作 container 資訊
+    print("in workstation_pick contaioner_id : "+container_id)
+    with open('參數檔.txt') as f:
+        json_data = json.load(f)
+    uri = json_data["uri"]
+    client = pymongo.MongoClient(uri)
+    db = client['ASRS-Cluster-0']
+    workstation_db = db["Workstations"]
+    work_info = workstation_db.aggregate([
+                         {'$addFields': {"workTransformed": {'$objectToArray': "$work"}}},
+                         {'$match': { 'workTransformed.v.container.'+container_id: {'$exists':1} }}
+                                     ])
+    for w_1 in work_info:
+        # print("in workstation_pick contaioner_id : ",container_id," w_1: ",w_1)
+        ws_work = w_1['work']
+        workstation_id = w_1['workstation_id']
+    # 找有哪些訂單有container
+    output_order_id_list = []
+    for order_id,order_pickup in ws_work.items():
+        for pick_container_id in order_pickup["container"]:
+            if container_id == pick_container_id:
+                #找出container在哪些張訂單號
+                output_order_id_list.append(order_id)
+    #刪除 container內要撿的商品並更新db
+    container_content_pick = {}
+    myquery = { "workstation_id": workstation_id}
+    for output_order_id in output_order_id_list:
+        for prd,pqt in ws_work[output_order_id]["container"][container_id].items():
+            ws_work[output_order_id]["prd"][prd]["qt"] -= pqt
+            container_content_pick[prd] = pqt
+            newvalues = { "$inc": { "work."+output_order_id+".prd."+prd+".qt":-pqt}}
+            
+            #container_work_append 登入container 訂單編號 揀取商品 揀取數量
+            workreport_key = container_id
+            value_name = "order_info"
+            content = (output_order_id, prd, pqt, str(datetime.datetime.now()))
+            if content != None:
+                container_report_append.delay(container_id, value_name, content)
+            else:
+                print("workstation_pick content == None")
+            
+            #需求量撿完刪除訂單商品並更新db
+            if ws_work[output_order_id]["prd"][prd]["qt"] == 0:
+                ws_work[output_order_id]["prd"].pop(prd,None)
+                newvalues = { "$unset": { "work."+output_order_id+".prd."+prd:""}}
+            workstation_db.update(myquery,newvalues)
+    #撿完container後刪除並更新workstation_db
+    for output_order_id in output_order_id_list:
+        ws_work[output_order_id]["container"].pop(container_id,None)
+        newvalues = { "$unset": { "work."+output_order_id+".container."+container_id:""}}
+        workstation_db.update(myquery,newvalues)
+    #更新container_db
+    container_pick(container_id, container_content_pick)
+    #TODO container送回倉
+    print(" workstation_id: "+workstation_id+" order_id: "+str(output_order_id_list))
+    return str(output_order_id_list),workstation_id
