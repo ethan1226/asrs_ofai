@@ -24,9 +24,14 @@ OFAI_Celery_func = Celery('OFAI_Celery_func', broker=broker, backend=backend)
 
 @OFAI_Celery_func.task(bind=True)
 def order_pick(self, workstation_id):
+    '''
+    會先收集工作站內訂單
+    先將訂單商品先合併商品資訊
+    在找到適當的container放入工作站
+    搜尋方式從redis改成直接搜尋db
+    '''
     print("workstation id: "+str(workstation_id)+"start order_pick")
-    #依訂單商品先合併商品資訊 找到適當的container放入工作站
-    #搜尋方式從redis改成直接搜尋db
+    
     # print("\033[1;34m Ethansay order_pick start \033[0m")
     r = redis.Redis(host='localhost', port=6379, decode_responses=False)
     with open('參數檔.txt') as f:
@@ -588,28 +593,9 @@ def container_operate(self, container_id):
         if order_check(workstation_id, order_id):
             print("workstation_id: "+str(workstation_id)+" finished order: "+str(order_id))
             workstation_workend.delay(workstation_id, order_id)
-    #選擇放回去的arm_id
-    index_putback = 1
-    while index_putback:
-        try:
-            arm_id = container_putback(container_id)
-            index_putback = 0
-        except:
-            print_string = "restart find arm_id to putback container"
-            print_coler(print_string,"g")
-            index_putback = 1
-        
-    oi = get_time_string()
-    value = (0,oi,0,container_id)
-    lock_name = arm_id+ "_pid"
-    lock_val = 1
-    while lock_val:
-        lock_id = acquire_lock_with_timeout(r, lock_name, acquire_timeout= 2, lock_timeout= 100)
-        print("container_operate: waiting lock release " + lock_name)
-        if lock_id != False:
-            lock_val = 0
-    redis_data_update_db(arm_id,value)
-    release_lock(r, lock_name, lock_id)
+    #將container_id 放回去storage內   自動選擇所要放的arm_id
+    arm_id = coutainer_go_storage(container_id)
+    #通知arm有新工作
     arms_work_transmit.delay(arm_id)
     return True
 '''
@@ -812,6 +798,5 @@ def workstation_pick(container_id):
         workstation_db.update(myquery,newvalues)
     #更新container_db
     container_pick(container_id, container_content_pick)
-    #TODO container送回倉
     print(" workstation_id: "+workstation_id+" order_id: "+str(output_order_id_list))
     return str(output_order_id_list),workstation_id
