@@ -1957,12 +1957,16 @@ def container_putback(container_id):
         # arm_score[arms_key] = arm_score_workloads + arm_score_turnover + arm_score_prdreserve
         
     arm_score_list = sorted(arm_score.items(),key=lambda item:item[1],reverse=True)
+    #找適當的手臂
     for list_n in range(len(arm_score_list)):
         arms_data = redis_dict_get(arm_score_list[list_n][0])
+        
         clear_space = True
+        #判斷container內商品是否有存在於此手臂內
         for k,v in contents.items():
             if k in arms_data["0"] or k in arms_data["1"]:
                 clear_space = False
+        #若不存在於此手臂內又剩餘空間還大於10個
         if clear_space and find_empty_arms_sid_num(arm_score_list[list_n][0])>10:
             return arm_score_list[list_n][0]
     
