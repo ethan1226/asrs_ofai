@@ -1905,6 +1905,11 @@ def container_putback(container_id):
     arm_elevator = {}
     #arm分數
     arm_score = {}
+    #分數佔例
+    coefficient_arms_workloads = 1.0
+    coefficient_arms_turnover = 1.0
+    coefficient_arms_elevator = 1.0
+    coefficient_total = coefficient_arms_workloads + coefficient_arms_turnover + coefficient_arms_elevator
     for arms_key in arm_key_all:
         # 存取目前手臂工作量 周轉數 跟移動電梯使用工作量
         arms_data = redis_dict_get(arms_key)
@@ -1941,7 +1946,9 @@ def container_putback(container_id):
         else:
             arm_score_elevator = arm_elevator[arms_key]/arm_elevator[max(arm_elevator, key=arm_elevator.get)]
         #手臂總分數 = 手臂工作量 + 手臂內商品週轉率 + 手臂電梯目前使用量
-        arm_score[arms_key] = arm_score_workloads + arm_score_turnover + arm_score_elevator
+        arm_score[arms_key] = (coefficient_arms_workloads*(1-arm_score_workloads) + \
+                               coefficient_arms_turnover*(1-arm_score_turnover) + \
+                               coefficient_arms_elevator*(1-arm_score_elevator))/ coefficient_total
         # if arm_prdreserve[max(arm_prdreserve, key=arm_prdreserve.get)] == 0:
         #     arm_score_prdreserve = arm_prdreserve[arms_key]
         # else:
@@ -1949,7 +1956,7 @@ def container_putback(container_id):
         
         # arm_score[arms_key] = arm_score_workloads + arm_score_turnover + arm_score_prdreserve
         
-    arm_score_list = sorted(arm_score.items(),key=lambda item:item[1])
+    arm_score_list = sorted(arm_score.items(),key=lambda item:item[1],reverse=True)
     for list_n in range(len(arm_score_list)):
         arms_data = redis_dict_get(arm_score_list[list_n][0])
         clear_space = True
