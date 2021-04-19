@@ -229,6 +229,7 @@ for k,v in storage_dict.items():
                            "contents":v["contents"],
                            "arm_id":v["arm_id"],
                            "grid_id":v["grid_id"],
+                           "elevator_id":elevator_id,
                            "relative_coords":v["relative_coords"],
                            "coordinates":v["coordinates"]
                            }} 
