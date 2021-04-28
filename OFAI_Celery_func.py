@@ -37,6 +37,9 @@ def order_pick(self, workstation_id):
     with open('參數檔.txt') as f:
         json_data = json.load(f)
     uri = json_data["uri"]
+    low_priority = json_data['low_priority']
+    medium_priority = json_data['medium_priority']
+    high_priority = json_data['high_priority']
     client = pymongo.MongoClient(uri)
     db = client['ASRS-Cluster-0']
     workstation_db = db["Workstations"]
@@ -102,7 +105,7 @@ def order_pick(self, workstation_id):
                         container_id = container_choosed[0]
                         #防止container被同時多個工作站選取
                         container_lock_name = container_id + "_pid"
-                        container_lock = acquire_lock_with_timeout(r, container_lock_name, acquire_timeout=2, lock_timeout=15)
+                        container_lock = acquire_lock_with_timeout(r, container_lock_name, acquire_timeout=2, lock_timeout=172800)
                         if container_lock != False:
                             if container_status(container_id)=='in grid':
                                 #改container_db狀態
@@ -163,22 +166,27 @@ def order_pick(self, workstation_id):
                                     value = (1,oi,numbering,container_id)
                                     numbering += 1
                                     #更新對應redis
-                                    lock_name = arm_id+ "_pid"
+                                    arms_data_lock = arm_id+ "_pid"
                                     lock_val = 1
                                     while lock_val:
-                                        lock_id = acquire_lock_with_timeout(r, lock_name, acquire_timeout= 2, lock_timeout= 172800)
-                                        print("更新對應redis waiting lock release " + lock_name)
+                                        lock_id = acquire_lock_with_timeout(r, arms_data_lock, acquire_timeout= 2, lock_timeout= 172800)
+                                        print("更新對應redis waiting lock release " + arms_data_lock)
                                         if lock_id != False:
                                             lock_val = 0
                                     redis_data_update_db(arm_id,value)
-                                    release_lock(r, lock_name, lock_id)
+                                    result = release_lock(r, arms_data_lock, lock_id)
+                                    if result:
+                                        print("order_pick release _pid lock" + arms_data_lock)
+                                    else:
+                                        print_string = "order_pick release _pid lock fail" + arms_data_lock
+                                        print_coler(print_string,"g")
                                 else:
                                     #container 內沒有訂單需求
                                     container_set_status(container_id,'in grid')
                                 # release_lock(r, lock_name, arm_product_lock)
                                 print("workstation id: "+str(workstation_id)+" oi: "+str(oi)+" arm_id: "+str(arm_id)+" layer: "+str(layer)+
                                       " pid: "+str(pid)+" container_id: "+container_id)
-                                arms_work_transmit.delay(arm_id)
+                                arms_work_transmit.apply_async(args = [arm_id], priority = medium_priority)
                         else:
                             layer_container_workloads_list_sort.insert(4,container_choosed)
                             release_lock(r, container_lock_name, container_lock)
@@ -204,6 +212,11 @@ def workstation_open(self, workstation_id,index_label,index,num):
     r = redis.Redis(host='localhost', port=6379, decode_responses=False)
     r.set("celery-task-meta-" + self.request.id, self.request.id)
     lock_name = "order_assignment"
+    with open('參數檔.txt') as f:
+        json_data = json.load(f)
+    low_priority = json_data['low_priority']
+    medium_priority = json_data['medium_priority']
+    high_priority = json_data['high_priority']
     if r.exists(workstation_id+"open") == 0:
         r.set(workstation_id+"open","")
         #此訂單池還有訂單
@@ -213,7 +226,7 @@ def workstation_open(self, workstation_id,index_label,index,num):
             if workstation_free(workstation_id):
                 print("工作站id: "+str(workstation_id)+" 沒有訂單")
                 #取得訂單池ＤＢ鑰匙
-                order_lock = acquire_lock_with_timeout(r,lock_name, acquire_timeout=3, lock_timeout=30)
+                order_lock = acquire_lock_with_timeout(r,lock_name, acquire_timeout=3, lock_timeout=172800)
                 #取得失敗
                 if order_lock != False:
                     #分配訂單 
@@ -232,13 +245,13 @@ def workstation_open(self, workstation_id,index_label,index,num):
                     print("工作站id: "+str(workstation_id)+" 撿取訂單項目輸入完成")
                     print("工作站id: "+str(workstation_id)+" 撿取開始")
                     #訂單商品選取撿出container號
-                    order_pick.delay(workstation_id)
+                    order_pick.apply_async(args=[workstation_id], priority = low_priority)
                     #workstation_open.delay(workstation_id,index_label,index,num)
             else:
                 print("工作站id: "+str(workstation_id)+" 還有訂單")
                 # order_l = workstation_order(workstation_id)
                 print("工作站id: "+str(workstation_id)+" 撿取開始")
-                order_pick.delay(workstation_id)
+                order_pick.apply_async(args=[workstation_id], priority = low_priority)
                 #workstation_open.delay(workstation_id,index_label,index,num)
         else:
             print("訂單池沒有訂單")
@@ -256,7 +269,7 @@ workstation_tasks
 '''
 robot_arm_tasks
 '''
-@OFAI_Celery_func.task(bind=True, soft_time_limit= 172800, time_limit= 172800)
+@OFAI_Celery_func.task(bind=True, soft_time_limit= 172800, time_limit= 172800, priority = 0)
 def arms_store(self, container_id,arm_id):
     #先從arm_id找出可放入的位置在將container放入並更新資料庫
     with open('參數檔.txt') as f:
@@ -264,7 +277,10 @@ def arms_store(self, container_id,arm_id):
     acc_rate = json_data["acc_rate"]
     elevator_speed = json_data["elevator_speed"]
     arm_speed = json_data["arm_speed"]
-    uri = json_data["uri"]    
+    uri = json_data["uri"]
+    low_priority = json_data['low_priority']
+    medium_priority = json_data['medium_priority']
+    high_priority = json_data['high_priority']
     r = redis.Redis(host='localhost', port=6379, decode_responses=False)
     #r.set("celery-task-meta-" + self.request.id, self.request.id)
     G = redis_dict_get("G")
@@ -311,32 +327,30 @@ def arms_store(self, container_id,arm_id):
         result = waiting_func(arm_moving_time, start_time)
     print("手臂" + arm_id + "抵達電梯")
     
-    elevator_content_key = elevator_lock_name + "_content"
-    elevator_content = r.get(elevator_content_key)
-    waiting_time = 1
-    '''
-    偷偷地拔掉電梯鎖
-    '''
-# =============================================================================
-#     while elevator_content != str(container_id): #and False:
-#         elevator_content = r.get(elevator_content_key)
-#         if elevator_content != None:
-#             elevator_content = elevator_content.decode("ascii")
-# 
-#         start_time = datetime.datetime.now()
-#         result = waiting_func(waiting_time, start_time)
-#         while not result[0]:
-#             result = waiting_func(waiting_time, start_time)
-#         print("手臂" + arm_id + "等電梯與 container_id: " + container_id + "中")
-# =============================================================================
+    #送到目標樓層上，加入存儲工作制手臂中
+    elevator_number = elevator_lock_name[-1]
+    elevator_content_key = elevator_lock_name + "_content" + str(eval(str(arm_id))[1])
+    lock_val = 1
+    while lock_val:
+        lock_id = acquire_lock_with_timeout(r, elevator_content_key, acquire_timeout= 2, lock_timeout= 172800)
+        print("抓取電梯補貨平台鎖中: " + elevator_content_key)
+        if lock_id != False:
+            lock_val = 0
+    
+    if r.exists(elevator_content_key):
+        elevator_content = dill.loads(r.get(elevator_content_key))
+        if container_id in elevator_content:
+            elevator_content.pop(container_id)
+        else:
+            print("arms_store 多送一次 container " + str(container_id))
+    else:
+        print("elevator_content_key "+ elevator_content_key +" 錯誤")
+        print("container_id: " + container_id + "不在補貨平台中!!")
+    r.set(elevator_content_key, dill.dumps(elevator_content))
+    release_lock(r, elevator_content_key, lock_id)
 
             
     print("手臂" + arm_id + "已取到貨 container_id " + container_id)
-    print(elevator_content_key)
-    r.set(elevator_content_key, "empty")
-    r.set("arms_store_" + elevator_lock_name +"_content", "empty")
-    print(r.get(elevator_content_key))
-
     print("手臂"+ arm_id + " " + str(arm_moving_time) +"秒後將 container_id:" + container_id + "放回倉庫")
     start_time = datetime.datetime.now()
     result = waiting_func(arm_moving_time, start_time)
@@ -397,7 +411,7 @@ def arms_store(self, container_id,arm_id):
     print("arms_store 釋放手臂鎖")
 
     
-@OFAI_Celery_func.task(bind=True, soft_time_limit= 172800, time_limit= 172800)
+@OFAI_Celery_func.task(bind=True, soft_time_limit= 172800, time_limit= 172800, priority = 1)
 def arms_pick(self, container_id):
     #機器手臂撿取container 並會判斷他上方是否有阻礙的container會先行移開在撿取目標container並更新資料庫
     r = redis.Redis(host='localhost', port=6379, decode_responses=False)
@@ -413,6 +427,9 @@ def arms_pick(self, container_id):
     acc_rate = json_data["acc_rate"]
     elevator_speed = json_data["elevator_speed"]
     arm_speed = json_data["arm_speed"]
+    low_priority = json_data['low_priority']
+    medium_priority = json_data['medium_priority']
+    high_priority = json_data['high_priority']
     try:
         client = pymongo.MongoClient(uri)
         db = client['ASRS-Cluster-0']
@@ -424,6 +441,25 @@ def arms_pick(self, container_id):
     container_info = container_db.find_one({"container_id":container_id})
     grid_id = container_info['grid_id']
     arm_id = (nodes[grid_id]['aisle_index'][0], nodes[grid_id]['aisle_index'][2])
+    elevator_grid_id = db["Storages"].find_one({"grid_id":grid_id})["elevator_id"]
+    elevator_number = str(eval(str(arm_id))[0])
+    elevator_lock_name = "ElevatorOut" + elevator_number
+    container_height = arm_id[1]
+    elevator_content_key = elevator_lock_name + "_content" + str(eval(str(arm_id))[1])
+    if r.exists(elevator_content_key):
+        elevator_content = dill.loads(r.get(elevator_content_key))
+        if len(elevator_content) >= 2:
+            print(elevator_content)
+            print(elevator_content_key)
+            print_string = "arms_pick揀貨平台上已有2箱，container_id "+ container_id +"重啟程序"
+            print_coler(print_string,"b")
+            waiting_time = 2
+            start_time = datetime.datetime.now()
+            result = waiting_func(waiting_time, start_time)
+            while not result[0]:
+                result = waiting_func(waiting_time, start_time)    
+            arms_pick.apply_async(args=[container_id], priority = low_priority)
+            return True
 
     #抓手臂鎖，確定目前沒工作後開始做這一項工作
     arm_lock_name = str(arm_id) + "_worklock"
@@ -494,65 +530,66 @@ def arms_pick(self, container_id):
             container_grid(container_id,-1)
             storage_pop(container_id)
             
-    #呼叫電梯，如果連接到電梯則設置電梯鎖
-    elevator_grid_id = db["Storages"].find_one({"grid_id":grid_id})["elevator_id"]
-    elevator_number = str(eval(str(arm_id))[0])
-    elevator_lock_name = "ElevatorOut" + elevator_number
-    container_height = arm_id[1]
-    elevator_lock = False
-    waiting_time = 1
-    start_time = datetime.datetime.now()
-    result = waiting_func(waiting_time, start_time)
-    while not elevator_lock:
-        print("連接電梯中..." + elevator_lock_name)
-        elevator_lock = acquire_lock_with_timeout(r, elevator_lock_name, acquire_timeout=2, lock_timeout=172800)
-        start_time = datetime.datetime.now()
-        while not result[0]:
-            result = waiting_func(waiting_time, start_time)
-# =============================================================================
-#         print_str = r.get(elevator_lock_name + "_task")
-#         if print_str != None:
-#             print(elevator_lock_name + "工作中，剩 " + str(print_str) + "秒完成")
-# =============================================================================
-    
-    r.set(elevator_lock_name + "_key", elevator_lock)
-    
-    
     #container_work_append 登入container 起始位置 揀取時間
     workreport_key = container_id
     value_name = "container_pick_time"
     content = datetime.datetime.now()
-    container_report_append.delay(container_id, value_name, content)
+    container_report_append.apply_async(args = [container_id, value_name, content], priority = medium_priority)
     value_name = "container_start_position"
     content = grid_id
-    container_report_append.delay(container_id, value_name, content)
+    container_report_append.apply_async(args = [container_id, value_name, content], priority = medium_priority)
     value_name = 'date'
     content = json_data['index']
-    container_report_append.delay(container_id, value_name, content)
+    container_report_append.apply_async(args = [container_id, value_name, content], priority = medium_priority)
 
 
-    elevator_moving_time = float(container_height) / elevator_speed / acc_rate
-    arm_distance = G.shortest_paths(source = grid_id, target = elevator_grid_id, weights = dists)[0]
-    arm_moving_time = arm_distance[0] / arm_speed / acc_rate
-    waiting_time = max(arm_moving_time, elevator_moving_time)
-    print("連接到電梯" + str(elevator_lock_name))
-    print(elevator_lock)
-    print("等電梯"+ str(waiting_time) +"秒後來取貨 " +  str(arm_id) + " container_id:" + container_id)
+# =============================================================================
+#     elevator_moving_time = float(container_height) / elevator_speed / acc_rate
+#     arm_distance = G.shortest_paths(source = grid_id, target = elevator_grid_id, weights = dists)[0]
+#     arm_moving_time = arm_distance[0] / arm_speed / acc_rate
+#     waiting_time = max(arm_moving_time, elevator_moving_time)
+#     print("連接到電梯" + str(elevator_lock_name))
+#     print(elevator_lock)
+#     print("等電梯"+ str(waiting_time) +"秒後來取貨 " +  str(arm_id) + " container_id:" + container_id)
+#     start_time = datetime.datetime.now()
+#     result = waiting_func(waiting_time, start_time)
+#     while not result[0]:
+#         result = waiting_func(waiting_time, start_time)
+#         
+#     print(elevator_lock_name, elevator_lock, container_id, container_height)
+#     #r.set(elevator_lock_name + "_task", elevator_moving_time)
+# =============================================================================
+    #將貨物送到電梯揀貨平台上
+    elevator_grid_id = db["Storages"].find_one({"grid_id":grid_id})["elevator_id"]
+    elevator_number = str(eval(str(arm_id))[0])
+    elevator_lock_name = "ElevatorOut" + elevator_number
+    container_height = arm_id[1]
+    elevator_content_key = elevator_lock_name + "_content" + str(eval(str(arm_id))[1])
     
-    start_time = datetime.datetime.now()
-    result = waiting_func(waiting_time, start_time)
-    while not result[0]:
-        result = waiting_func(waiting_time, start_time)
+    #抓取揀貨平台鎖
+    lock_val = 1
+    while lock_val:
+        lock_id = acquire_lock_with_timeout(r, elevator_content_key, acquire_timeout= 2, lock_timeout= 172800)
+        print("抓取電梯揀貨平台鎖中: " + elevator_content_key)
+        if lock_id != False:
+            lock_val = 0
+    
+    if r.exists(elevator_content_key):
+        elevator_content = dill.loads(r.get(elevator_content_key))
+        elevator_content[container_id] = datetime.datetime.now()
+    else:    
+        elevator_content = {}
+        elevator_content[container_id] = datetime.datetime.now()
         
-    print(elevator_lock_name, elevator_lock, container_id, container_height)
-    #r.set(elevator_lock_name + "_task", elevator_moving_time)
+    r.set(elevator_content_key, dill.dumps(elevator_content))
+    release_lock(r, elevator_content_key, lock_id)
     
     redis_work_over(str(arm_id))
     result = release_lock(r, arm_lock_name, arm_lock)
     print("arms_pick 釋放手臂鎖")
     
-    arms_pick_task = elevator_pick_move(elevator_lock_name, elevator_lock, container_id, str(container_height))
-    print("貨送到電梯上 " +  elevator_lock_name + " container_id:" + container_id)
+    elevator_pick_task = elevator_pick_move.apply_async(args = [elevator_lock_name, container_id, str(container_height)], priority = high_priority)
+    print("貨送到電梯平台上 container_id:" + container_id)
     #r.set("arms_pick_task_" + elevator_lock_name, arms_pick_task.id)
     
 
@@ -563,16 +600,21 @@ def arms_work_transmit(self, arm_id):
     # arms_dict = {}
     # arms_dict[arm_id] = redis_dict_get(arm_id)    
     r = redis.Redis(host='localhost', port=6379, decode_responses=False)
+    with open('參數檔.txt') as f:
+        json_data = json.load(f)
+    low_priority = json_data['low_priority']
+    medium_priority = json_data['medium_priority']
+    high_priority = json_data['high_priority']
     #r.set("celery-task-meta-" + self.request.id, self.request.id)
     '''
     取手臂鎖
     '''
     conn = redis.Redis(host='localhost', port=6379, decode_responses=False)  
-    lock_name = arm_id+ "_pid"
+    arms_data_lock = arm_id+ "_pid"
     lock_val = 1
     while lock_val:
-        lock_id = acquire_lock_with_timeout(conn, lock_name, acquire_timeout= 2, lock_timeout= 172800)
-        print("arms_work_transmit: waiting lock release " + lock_name)
+        lock_id = acquire_lock_with_timeout(conn, arms_data_lock, acquire_timeout= 2, lock_timeout= 172800)
+        print("arms_work_transmit: waiting lock release " + arms_data_lock)
         if lock_id != False:
             lock_val = 0
     '''
@@ -590,19 +632,24 @@ def arms_work_transmit(self, arm_id):
     print("判斷是要撿取還是存取container並執行")
     if container_info[0] == 1:
         print("arms pick container id: "+str(container_info[3]))
-        arms_pick.delay(container_info[3])
+        arms_pick.apply_async(args = [container_info[3]], priority = low_priority)
+        #arms_pick.apply_async((container_info[3]), priority = 5)
         redis_dict_turnover_pop(arm_id,container_info[3])
     else:
         print("arms store container id: "+str(container_info[3])+" on arm id: "+str(arm_id))
-        arms_store.delay(container_info[3],arm_id)
+        arms_store.apply_async(args = [container_info[3],arm_id], priority = high_priority)
+        #arms_store.apply_async((container_info[3],arm_id), priority = 0)
         redis_dict_turnover_push(arm_id,container_info[3])
     
     '''
     釋放手臂鎖    
     '''
-    release_lock(conn, lock_name, lock_id)
-    print("release_lock " + lock_name +" finished")
-
+    result = release_lock(conn, arms_data_lock, lock_id)
+    if result:
+        print("arms_work_transmit release _pid lock " + arms_data_lock +" finished")
+    else:
+        print_string = "arms_work_transmit release _pid lock fail" + arms_data_lock
+        print_coler(print_string,"g")
     return True
 '''
 robot_arm_tasks
@@ -642,7 +689,10 @@ def workstation_workend(self, workstation_id,order_id):
     #工作站檢取完後 刪除工作
     with open('參數檔.txt') as f:
         json_data = json.load(f)
-    uri = json_data["uri"]    
+    uri = json_data["uri"]
+    low_priority = json_data['low_priority']
+    medium_priority = json_data['medium_priority']
+    high_priority = json_data['high_priority']
     r = redis.Redis(host='localhost', port=6379, decode_responses=False)
     r.set("celery-task-meta-" + self.request.id, self.request.id)
     try:
@@ -668,31 +718,46 @@ def workstation_workend(self, workstation_id,order_id):
                 index_label = json_data["index_label"]
                 index = json_data["index"]
                 num = json_data["num"]
-                workstation_open.delay(workstation_id,index_label,index,num)
+                workstation_open.apply_async(args = [workstation_id,index_label,index,num], priority = low_priority)
         else:
             print_string = "workstation_id: "+str(workstation_id)+" no order id: "+str(order_id)
             print_coler(print_string,"g")
     except:
         print_string = "restart workstation workend"
         print_coler(print_string,"g")
-        workstation_workend.delay(workstation_id, order_id)
+        workstation_workend.apply_async(args = [workstation_id, order_id], priority = low_priority)
         Sigkill_func(self.request.id)
         return True
     
 
 @OFAI_Celery_func.task(bind=True, soft_time_limit= 172800, time_limit= 172800)
-def container_operate(self, container_id):
+def container_operate(self, container_id, elevator_number):
     r = redis.Redis(host='localhost', port=6379, decode_responses=False)
     r.set("celery-task-meta-" + self.request.id, self.request.id)
     with open('參數檔.txt') as f:
         json_data = json.load(f)
-        acc_rate = json_data["acc_rate"]
+    acc_rate = json_data["acc_rate"]
+    low_priority = json_data['low_priority']
+    medium_priority = json_data['medium_priority']
+    high_priority = json_data['high_priority']
+    #計算運輸時間
+    transport_time = (int(elevator_number) * 2 + 10) / acc_rate
+    #模擬運輸時間
+    start_time = datetime.datetime.now()
+    result = waiting_func(transport_time, start_time)
+    while not result[0]:
+        result = waiting_func(transport_time, start_time)
+    print("conveyor 運送 container " + container_id + "中，" + str(transport_time) + "秒後到工作站")
+
+
+    print("Picking container: container_id: " + container_id + "'s state is on_workstation")
+        
     #工作站收到container_id
-    workstation_get.delay(container_id)
+    workstation_get.apply_async(args = [container_id], priority = low_priority)
     #container_work_append 登入container 抵達工作站時間
     value_name = "container_arrive_time"
     content = datetime.datetime.now()
-    container_report_append.delay(container_id, value_name, content)
+    container_report_append.apply_async(args = [container_id, value_name, content], priority = medium_priority)
     
     #工作站撿取container_id需求內容物
     order_id_list_str, workstation_id = workstation_pick(container_id)
@@ -701,7 +766,7 @@ def container_operate(self, container_id):
     for order_id in order_id_list:
         if order_check(workstation_id, order_id):
             print("workstation_id: "+str(workstation_id)+" finished order: "+str(order_id))
-            workstation_workend.delay(workstation_id, order_id)
+            workstation_workend.apply_async(args = [workstation_id, order_id], priority = low_priority)
     #選擇放回去的arm_id
     index_putback = 1
     while index_putback:
@@ -739,174 +804,7 @@ def container_operate(self, container_id):
     #container_work_append 登入container 入庫開始時間
     value_name = "container_store_start_time"
     content = datetime.datetime.now()
-    container_report_append.delay(container_id, value_name, content)
-    conveyor_moveto_grid.delay(container_id, arm_id)
-    return True
-'''
-robot_arm_tasks
-'''
-
-@OFAI_Celery_func.task(bind=True, soft_time_limit= 172800, time_limit= 172800)
-def Sigkill_func(self, task_id):
-    celery.task.control.revoke(task_id, terminate=True, signal='SIGKILL')
-    return True
-
-@OFAI_Celery_func.task(bind=True, soft_time_limit= 172800, time_limit= 172800)
-def elevator_pick_move(self, elevator_lock_name, elevator_lock, container_id, container_height):
-    try:
-        print("elevator_pick_move收到container " + str(container_id))
-        r = redis.Redis(host='localhost', port=6379, decode_responses=False)
-        with open('參數檔.txt') as f:
-            json_data = json.load(f)
-        acc_rate = json_data["acc_rate"]
-        elevator_speed = json_data["elevator_speed"]
-        moving_time = float(container_height) / elevator_speed / acc_rate
-        print(" 電梯" + elevator_lock_name + "運送中，此任務耗時"+ str(moving_time) +"秒")
-        start_time = datetime.datetime.now()
-        result = waiting_func(moving_time, start_time)
-        while not result[0]:
-            result = waiting_func(moving_time, start_time)
-            #r.set(elevator_lock_name + "_task", result[1])
-        print(" 電梯" + elevator_lock_name + "運送完成，此任務耗時"+ str(moving_time) +"秒")
-
-        #送到輸送帶上，更改container
-        elevator_number = elevator_lock_name[-1]
-        conveyor_moveto_workstation.delay(container_id, elevator_number)
-        #解除電梯鎖
-        result = release_lock(r, elevator_lock_name, elevator_lock)
-        waiting_time = 1
-        start_time = datetime.datetime.now()
-        result = waiting_func(waiting_time, start_time)
-        while not result[0]:
-            result = waiting_func(waiting_time, start_time)
-        print("解除電梯鎖: " + str(elevator_lock) + " 電梯編號：" + elevator_lock_name)
-        print("Picking container: container_id: " + container_id + "'s state is changed to on_conveyor")
-    except:
-        print("elevator_pick_move error")
-
-@OFAI_Celery_func.task(bind=True, soft_time_limit= 172800, time_limit= 172800)
-def elevator_store_move(self, elevator_lock_name, container_id, container_height, arm_id):
-    r = redis.Redis(host='localhost', port=6379, decode_responses=False)
-    #呼叫電梯，如果連接到電梯則設置電梯鎖
-    waiting_time = 1
-    start_time = datetime.datetime.now()
-    result = waiting_func(waiting_time, start_time)
-    '''
-    偷偷解除電梯鎖
-    '''
-    elevator_lock = False
-    while not elevator_lock:
-        print("elevator_store_move 連接電梯中..." + elevator_lock_name)
-        elevator_lock = acquire_lock_with_timeout(r, elevator_lock_name, acquire_timeout=2, lock_timeout=172800)
-        start_time = datetime.datetime.now()
-        while not result[0]:
-            result = waiting_func(waiting_time, start_time)
-
-
-    print(elevator_lock_name +"收到container " + str(container_id))
-    oi = get_time_string()
-    value = (0,oi,0,container_id)
-    lock_name = arm_id+ "_pid"
-    lock_val = 1
-    while lock_val:
-        lock_id = acquire_lock_with_timeout(r, lock_name, acquire_timeout= 2, lock_timeout= 172800)
-        print("elevator_store_move: waiting _pid lock release " + lock_name)
-        if lock_id != False:
-            lock_val = 0
-    redis_data_update_db(arm_id,value)
-    
-    '''
-    硬把ars_work_transmit跟arms_pick搬到這邊執行，去除相依性 
-    '''
-    container_info = redis_dict_get_work(arm_id)
-    arms_pick(container_info[3])
-    redis_dict_turnover_pop(arm_id,container_info[3])
-    release_lock(r, lock_name, lock_id)
-    #arms_work_transmit(arm_id)
-    
-    r = redis.Redis(host='localhost', port=6379, decode_responses=False)
-    with open('參數檔.txt') as f:
-        json_data = json.load(f)
-    acc_rate = json_data["acc_rate"]
-    elevator_speed = json_data["elevator_speed"]
-    moving_time = float(container_height) / elevator_speed / acc_rate
-    print(" 電梯" + elevator_lock_name + "運送中，此任務耗時"+ str(moving_time * 2) +"秒")
-    start_time = datetime.datetime.now()
-    result = waiting_func(moving_time, start_time)
-    while not result[0]:
-        result = waiting_func(moving_time, start_time)
-        #因為是要存進去，所以不知道要等多久，先卡著
-        #r.set(elevator_lock_name + "_task", result[1] + moving_time)
-
-    #送到目標樓層上，等手臂來抓
-    elevator_number = elevator_lock_name[-1]
-    elevator_content_key = elevator_lock_name + "_content" + eval(arm_id)[1]
-    lock_val = 1
-    while lock_val:
-        lock_id = acquire_lock_with_timeout(r, elevator_content_key, acquire_timeout= 2, lock_timeout= 172800)
-        print("elevator_store_move: waiting _pid lock release " + lock_name)
-        if lock_id != False:
-            lock_val = 0
-    
-    r.set(elevator_content_key, container_id)
-    elevator_content = r.get(elevator_content_key)
-    waiting_time = 1
-    while elevator_content != "empty":
-        print(elevator_lock_name + " with container " + container_id + " arrived, waiting for " + str(arm_id))
-        elevator_content = r.get(elevator_content_key)
-        if elevator_content != None:
-            elevator_content = elevator_content.decode("ascii")
-        start_time = datetime.datetime.now()
-        result = waiting_func(waiting_time, start_time)
-        while not result[0]:
-            result = waiting_func(waiting_time, start_time)
-    
-    print("手臂已取走貨物，電梯" + elevator_lock_name + "回程中，此任務耗時"+ str(moving_time) +"秒")
-    start_time = datetime.datetime.now()
-    result = waiting_func(moving_time, start_time)
-    while not result[0]:
-        result = waiting_func(moving_time, start_time)
-        #因為是要存進去，所以不知道要等多久，先卡著
-        #r.set(elevator_lock_name + "_task", result[1])
-    
-    #解除電梯鎖
-    '''
-    偷偷解除電梯鎖
-    '''
-    result = release_lock(r, elevator_lock_name, elevator_lock)
-    waiting_time = 1
-    start_time = datetime.datetime.now()
-    result = waiting_func(waiting_time, start_time)
-    while not result[0]:
-        result = waiting_func(waiting_time, start_time)
-    print("解除電梯鎖: " + str(elevator_lock) + " 電梯編號：" + elevator_lock_name)
-    
-
-
-@OFAI_Celery_func.task(bind=True, soft_time_limit= 172800, time_limit= 172800)
-def conveyor_moveto_workstation(self, container_id, elevator_number):
-    with open('參數檔.txt') as f:
-        json_data = json.load(f)
-    acc_rate = json_data["acc_rate"]
-    print("conveyor_moveto_workstation 收到 container " + container_id)
-    #計算運輸時間
-    transport_time = (int(elevator_number) * 2 + 10) / acc_rate
-    
-    #模擬運輸時間
-    start_time = datetime.datetime.now()
-    result = waiting_func(transport_time, start_time)
-    while not result[0]:
-        result = waiting_func(transport_time, start_time)
-
-    print("Picking container: container_id: " + container_id + "'s state is on_workstation")
-    #送到工作站的container
-    container_operate.delay(container_id)
-    
-@OFAI_Celery_func.task(bind=True, soft_time_limit= 172800, time_limit= 172800)
-def conveyor_moveto_grid(self, container_id, arm_id):
-    with open('參數檔.txt') as f:
-        json_data = json.load(f)
-    acc_rate = json_data["acc_rate"]
+    container_report_append.apply_async(args = [container_id, value_name, content], priority = medium_priority)
     
     #計算運輸時間
     elevator_number = eval(str(arm_id))[0]
@@ -923,15 +821,230 @@ def conveyor_moveto_grid(self, container_id, arm_id):
     container_height = eval(str(arm_id))[1]
     elevator_lock_name = "ElevatorIn" + str(elevator_number)
     print(elevator_lock_name, container_id, container_height)
-    elevator_store_move.delay(elevator_lock_name, container_id, container_height, arm_id)
+    elevator_store_move.apply_async(args = [elevator_lock_name, container_id, container_height, arm_id], priority = low_priority)
+    #elevator_store_move.apply_async((elevator_lock_name, container_id, container_height, arm_id), priority = 3)
     print("container: " + container_id + " 抵達電梯 " + elevator_lock_name + " 啟動 elevator_store_move")
+    return True
+'''
+robot_arm_tasks
+'''
 
+@OFAI_Celery_func.task(bind=True, soft_time_limit= 172800, time_limit= 172800)
+def Sigkill_func(self, task_id):
+    celery.task.control.revoke(task_id, terminate=True, signal='SIGKILL')
+    return True
+
+@OFAI_Celery_func.task(bind=True, soft_time_limit= 172800, time_limit= 172800)
+def elevator_pick_move(self,elevator_lock_name, container_id, container_height):
+    try:
+        r = redis.Redis(host='localhost', port=6379, decode_responses=False)
+        with open('參數檔.txt') as f:
+            json_data = json.load(f)
+        acc_rate = json_data["acc_rate"]
+        elevator_speed = json_data["elevator_speed"]
+        low_priority = json_data['low_priority']
+        medium_priority = json_data['medium_priority']
+        high_priority = json_data['high_priority']
+        moving_time = float(container_height) / elevator_speed / acc_rate
+        
+        #呼叫電梯，如果連接到電梯則設置電梯鎖
+        waiting_time = 1
+        start_time = datetime.datetime.now()
+        result = waiting_func(waiting_time, start_time)
+        elevator_lock = False
+        while not elevator_lock:
+            print("elevator_pick_move 連接電梯中..." + elevator_lock_name)
+            elevator_lock = acquire_lock_with_timeout(r, elevator_lock_name, acquire_timeout=2, lock_timeout=172800)
+            start_time = datetime.datetime.now()
+            while not result[0]:
+                result = waiting_func(waiting_time, start_time)
+        
+        print("elevator_pick_move 連接到電梯..." + elevator_lock_name)
+        print(" 電梯" + elevator_lock_name + "前往取貨中，此任務耗時"+ str(moving_time) +"秒")
+        start_time = datetime.datetime.now()
+        result = waiting_func(moving_time, start_time)
+        while not result[0]:
+            result = waiting_func(moving_time, start_time)
+            #r.set(elevator_lock_name + "_task", result[1])
+        
+        #抓取揀貨工作平台鎖
+        elevator_number = elevator_lock_name[-1]
+        elevator_content_key = elevator_lock_name + "_content" + str(container_height)
+        lock_val = 1
+        while lock_val:
+            lock_id = acquire_lock_with_timeout(r, elevator_content_key, acquire_timeout= 2, lock_timeout= 172800)
+            print("抓取電梯揀貨平台鎖中: " + elevator_content_key)
+            if lock_id != False:
+                lock_val = 0
+                
+        if r.exists(elevator_content_key):
+            elevator_content = dill.loads(r.get(elevator_content_key))
+            elevator_content.pop(container_id)
+        else:
+            print("elevator_content_key "+ elevator_content_key +" 錯誤")
+            print("container_id: " + container_id + "不在揀貨平台中!!")
+        r.set(elevator_content_key, dill.dumps(elevator_content))
+        result = release_lock(r, elevator_content_key, lock_id)
+
+        
+        print("elevator_pick_move收到container " + str(container_id))
+        print(" 電梯" + elevator_lock_name + "運送中，此任務耗時"+ str(moving_time) +"秒")
+        start_time = datetime.datetime.now()
+        result = waiting_func(moving_time, start_time)
+        while not result[0]:
+            result = waiting_func(moving_time, start_time)
+            #r.set(elevator_lock_name + "_task", result[1])
+        print(" 電梯" + elevator_lock_name + "運送完成，此任務耗時"+ str(moving_time) +"秒")
+
+        #送到輸送帶上，更改container
+        elevator_number = elevator_lock_name[-1]
+        container_operate.apply_async(args = [container_id, elevator_number], priority = low_priority)
+
+        #解除電梯鎖
+        result = release_lock(r, elevator_lock_name, elevator_lock)
+        print("解除電梯鎖: " + str(elevator_lock) + " 電梯編號：" + elevator_lock_name)
+        print("Picking container: container_id: " + container_id + "'s state is changed to on_conveyor")
+    except:
+        print_string = "elevator_pick_move error"
+        print_coler(print_string,"r")
+
+@OFAI_Celery_func.task(bind=True, soft_time_limit= 172800, time_limit= 172800, priority = 2)
+def elevator_store_move(self, elevator_lock_name, container_id, container_height, arm_id):
+    r = redis.Redis(host='localhost', port=6379, decode_responses=False)
+    with open('參數檔.txt') as f:
+        json_data = json.load(f)
+    low_priority = json_data['low_priority']
+    medium_priority = json_data['medium_priority']
+    high_priority = json_data['high_priority']
+    elevator_number = elevator_lock_name[-1]
+    elevator_content_key = elevator_lock_name + "_content" + str(eval(str(arm_id))[1])
+    if r.exists(elevator_content_key):
+        elevator_content = dill.loads(r.get(elevator_content_key))
+        if len(elevator_content) >= 2:
+            print(elevator_content)
+            print(elevator_content_key)
+            print_string = "elevator_store_move揀貨平台上已有2箱，container_id "+ container_id +"重啟程序"
+            print_coler(print_string,"b")
+            waiting_time = 20
+            start_time = datetime.datetime.now()
+            result = waiting_func(waiting_time, start_time)
+            while not result[0]:
+                result = waiting_func(waiting_time, start_time)
+            
+            elevator_store_move.apply_async(args = [elevator_lock_name, container_id, container_height, arm_id], priority = low_priority)
+            #elevator_store_move.apply_async((elevator_lock_name, container_id, container_height, arm_id), priority = 3)
+            return True
+    
+    
+    #呼叫電梯，如果連接到電梯則設置電梯鎖
+    waiting_time = 1
+    start_time = datetime.datetime.now()
+    result = waiting_func(waiting_time, start_time)
+    elevator_lock = False
+    while not elevator_lock:
+        print("elevator_store_move 連接電梯中..." + elevator_lock_name)
+        elevator_lock = acquire_lock_with_timeout(r, elevator_lock_name, acquire_timeout=2, lock_timeout=172800)
+        start_time = datetime.datetime.now()
+        while not result[0]:
+            result = waiting_func(waiting_time, start_time)
+    print(elevator_lock_name +"收到container " + str(container_id))
+    
+    r = redis.Redis(host='localhost', port=6379, decode_responses=False)
+    with open('參數檔.txt') as f:
+        json_data = json.load(f)
+    acc_rate = json_data["acc_rate"]
+    elevator_speed = json_data["elevator_speed"]
+    low_priority = json_data['low_priority']
+    medium_priority = json_data['medium_priority']
+    high_priority = json_data['high_priority']
+    moving_time = float(container_height) / elevator_speed / acc_rate
+    print(" 電梯" + elevator_lock_name + "運送中，此任務耗時"+ str(moving_time * 2) +"秒")
+    start_time = datetime.datetime.now()
+    result = waiting_func(moving_time, start_time)
+    while not result[0]:
+        result = waiting_func(moving_time, start_time)
+        #因為是要存進去，所以不知道要等多久，先卡著
+        #r.set(elevator_lock_name + "_task", result[1] + moving_time)
+
+    #送到目標樓層上，加入存儲工作制手臂中
+    elevator_number = elevator_lock_name[-1]
+    elevator_content_key = elevator_lock_name + "_content" + str(eval(str(arm_id))[1])
+    lock_val = 1
+    while lock_val:
+        lock_id = acquire_lock_with_timeout(r, elevator_content_key, acquire_timeout= 2, lock_timeout= 172800)
+        print("抓取電梯補貨平台鎖中: " + elevator_content_key)
+        if lock_id != False:
+            lock_val = 0
+    
+    if r.exists(elevator_content_key):
+        elevator_content = dill.loads(r.get(elevator_content_key))
+        elevator_content[container_id] = datetime.datetime.now()
+
+# =============================================================================
+#         if len(elevator_content) < 2:
+#             elevator_content[container_id] = datetime.datetime.now()
+# 
+#         else:
+#             print("電梯補貨平台超過兩箱: " + elevator_content_key)
+#             print("重新排序此任務")
+#             result = release_lock(r, elevator_content_key, lock_id)
+#             result = release_lock(r, elevator_lock_name, elevator_lock)
+# =============================================================================
+    else:    
+        elevator_content = {}
+        elevator_content[container_id] = datetime.datetime.now()
+        
+    r.set(elevator_content_key, dill.dumps(elevator_content))
+    release_lock(r, elevator_content_key, lock_id)
+
+    #將徂存工作塞入機械手臂中
+    try:
+        oi = get_time_string()
+        value = (0,oi,0,container_id)
+        arms_data_lock = arm_id+ "_pid"
+        lock_val = 1
+        while lock_val:
+            lock_id = acquire_lock_with_timeout(r, arms_data_lock, acquire_timeout= 2, lock_timeout= 172800)
+            print("elevator_store_move: waiting _pid lock release " + arms_data_lock)
+            if lock_id != False:
+                lock_val = 0
+            waiting_time = 2
+            start_time = datetime.datetime.now()
+            result = waiting_func(waiting_time, start_time)
+            while not result[0]:
+                result = waiting_func(waiting_time, start_time)
+        redis_data_update_db(arm_id,value)
+        result = release_lock(r, arms_data_lock, lock_id)
+        if result:
+            print("elevator_store_move release pid lock: " +  str(arms_data_lock))
+        else:
+            print_string = "elevator_store_move release _pid lock fail: " +  str(arms_data_lock)
+            print_coler(print_string,"g")
+    except:
+        print_string = "elevator_store_move release _pid lock fail!!!!!"
+        print_coler(print_string,"r")
+    arms_work_transmit.apply_async(args = [arm_id], priority = medium_priority)
+    
+    print("已放置貨物至平台上，電梯" + elevator_lock_name + "回程中，此任務耗時"+ str(moving_time) +"秒")
+    start_time = datetime.datetime.now()
+    result = waiting_func(moving_time, start_time)
+    while not result[0]:
+        result = waiting_func(moving_time, start_time)
+        #因為是要存進去，所以不知道要等多久，先卡著
+        #r.set(elevator_lock_name + "_task", result[1])
+    
+    #解除電梯鎖
+    result = release_lock(r, elevator_lock_name, elevator_lock)
+    print("解除電梯鎖: " + str(elevator_lock) + " 電梯編號：" + elevator_lock_name)
     
 @OFAI_Celery_func.task(bind=True, soft_time_limit= 172800, time_limit= 172800)
 def waiting_func(self, waiting_secs, start_time):
     with open('參數檔.txt') as f:
         json_data = json.load(f)
     acc_rate = json_data["acc_rate"]
+    low_priority = json_data['low_priority']
+    medium_priority = json_data['medium_priority']
+    high_priority = json_data['high_priority']
     #start_time = datetime.datetime.now()
     end_time = datetime.datetime.now()
     remain_time = waiting_secs - (end_time - start_time).total_seconds()
@@ -1021,6 +1134,9 @@ def workstation_pick(container_id):
     with open('參數檔.txt') as f:
         json_data = json.load(f)
     uri = json_data["uri"]
+    low_priority = json_data['low_priority']
+    medium_priority = json_data['medium_priority']
+    high_priority = json_data['high_priority']
     client = pymongo.MongoClient(uri)
     db = client['ASRS-Cluster-0']
     workstation_db = db["Workstations"]
@@ -1053,7 +1169,7 @@ def workstation_pick(container_id):
             value_name = "order_info"
             content = (output_order_id, prd, pqt, str(datetime.datetime.now()), workstation_id)
             if content != None:
-                container_report_append.delay(container_id, value_name, content)
+                container_report_append.apply_async(args = [container_id, value_name, content], priority = medium_priority)
             else:
                 print("workstation_pick content == None")
             
@@ -1082,3 +1198,21 @@ def workstation_pick(container_id):
     #TODO container送回倉
     print(" workstation_id: "+workstation_id+" order_id: "+str(output_order_id_list))
     return str(output_order_id_list),workstation_id
+
+@OFAI_Celery_func.task(bind=True, soft_time_limit= 172800, time_limit= 172800)
+def add_a(self):
+    for i in range(100000000):
+        pass
+    print("a")
+    
+@OFAI_Celery_func.task(bind=True, soft_time_limit= 172800, time_limit= 172800)
+def add_b(self):
+    print("b")
+    
+@OFAI_Celery_func.task(bind=True, soft_time_limit= 172800, time_limit= 172800)
+def add_c(self):
+    print("c")
+    
+@OFAI_Celery_func.task(bind=True, soft_time_limit= 172800, time_limit= 172800)
+def add_d(self):
+    print("d")

@@ -189,6 +189,9 @@ def order_assign(index_label,index,num):
                 newvalues = { "$set": { "status": "workstation"}}
                 order_db.update(myquery,newvalues)
                 num -= 1
+    if num >0:
+        print_string = "只有 "+str(num)+ " 張訂單滿足分配條件"
+        print_coler(print_string,"g")
     return output
 
 def order_assign_crunch(index_label,index,num):
