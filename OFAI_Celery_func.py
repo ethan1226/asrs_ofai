@@ -649,7 +649,7 @@ def arms_work_transmit(self, arm_id):
     判斷是要撿取還是存取container並執行
     '''
     print("判斷是要撿取還是存取container並執行")
-    container_id = str(container_info[3])
+    container_id = container_info[3]
     if container_info[0] == 1:
         if container_status(container_id) == "waiting":
             print("arms pick container id: "+str(container_id))
