@@ -2026,7 +2026,7 @@ def redis_dict_get(key):
 def redis_dict_get_work(key):
     value = redis_dict_get(key)
     if value['works'].empty():
-        return ""
+        return "empty"
     else:
         container_info = value['works'].get(timeout = 3.0)
         redis_dict_set(key, value)

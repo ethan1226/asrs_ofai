@@ -634,7 +634,7 @@ def arms_work_transmit(self, arm_id):
     #container_info = eval(arms_dict[str(arm_id)]['works'].get())
     
     container_info = redis_dict_get_work(arm_id)
-    if container_info == "":
+    if container_info == "empty":
         result = release_lock(r, arms_data_lock, lock_id)
         if result:
             print_string ="no work in arm_id: "+str(arm_id)+" arms_work_transmit release _pid lock " + arms_data_lock +" finished"
@@ -1196,6 +1196,7 @@ def workstation_pick(container_id):
     myquery = { "workstation_id": workstation_id}
     for output_order_id in output_order_id_list:
         for prd,pqt in ws_work[output_order_id]["container"][container_id].items():
+            print("in workstation_pick order_id: "+str(output_order_id)+" pick pid: "+str(prd)+" pqt: "+str(pqt))
             ws_work[output_order_id]["prd"][prd]["qt"] -= pqt
             container_content_pick[prd] = pqt
             newvalues = { "$inc": { "work."+output_order_id+".prd."+prd+".qt":-pqt}}
