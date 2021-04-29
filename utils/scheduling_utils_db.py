@@ -1600,6 +1600,8 @@ def workstation_get(container_id):
     '''
     # 
     container_set_status(container_id,'in_workstation')
+    
+
 
 def workstation_pick_info(container_id):
     '''
@@ -2023,9 +2025,12 @@ def redis_dict_get(key):
     return one_dict
 def redis_dict_get_work(key):
     value = redis_dict_get(key)
-    container_info = value['works'].get()
-    redis_dict_set(key, value)
-    return container_info
+    if value['works'].empty():
+        return ""
+    else:
+        container_info = value['works'].get(timeout = 3.0)
+        redis_dict_set(key, value)
+        return container_info
 
 def redis_work_over(key):
     value = redis_dict_get(key)

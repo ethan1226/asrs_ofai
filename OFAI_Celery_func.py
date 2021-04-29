@@ -173,6 +173,7 @@ def order_pick(self, workstation_id):
                                         print("更新對應redis waiting lock release " + arms_data_lock)
                                         if lock_id != False:
                                             lock_val = 0
+                                    print("order_pick get _pid key " + arms_data_lock + " " + lock_id)
                                     redis_data_update_db(arm_id,value)
                                     result = release_lock(r, arms_data_lock, lock_id)
                                     if result:
@@ -343,6 +344,13 @@ def arms_store(self, container_id,arm_id):
             elevator_content.pop(container_id)
         else:
             print("arms_store 多送一次 container " + str(container_id))
+            print("關掉arms_store程序")
+
+            result = release_lock(r, arm_lock_name, arm_lock)
+            release_lock(r, elevator_content_key, lock_id)
+            return True
+
+
     else:
         print("elevator_content_key "+ elevator_content_key +" 錯誤")
         print("container_id: " + container_id + "不在補貨平台中!!")
@@ -609,14 +617,14 @@ def arms_work_transmit(self, arm_id):
     '''
     取手臂鎖
     '''
-    conn = redis.Redis(host='localhost', port=6379, decode_responses=False)  
     arms_data_lock = arm_id+ "_pid"
     lock_val = 1
     while lock_val:
-        lock_id = acquire_lock_with_timeout(conn, arms_data_lock, acquire_timeout= 2, lock_timeout= 172800)
+        lock_id = acquire_lock_with_timeout(r, arms_data_lock, acquire_timeout= 2, lock_timeout= 172800)
         print("arms_work_transmit: waiting lock release " + arms_data_lock)
         if lock_id != False:
             lock_val = 0
+    print("arms_work_transmit get _pid key " + arms_data_lock + " " + lock_id)
     '''
     取container資訊
     '''
@@ -624,7 +632,18 @@ def arms_work_transmit(self, arm_id):
     #print(arms_dict[str(arm_id)]['works'].get())
     #print(eval(arms_dict[str(arm_id)]['works'].get()))
     #container_info = eval(arms_dict[str(arm_id)]['works'].get())
+    
     container_info = redis_dict_get_work(arm_id)
+    if container_info == "":
+        result = release_lock(r, arms_data_lock, lock_id)
+        if result:
+            print_string ="no work in arm_id: "+str(arm_id)+" arms_work_transmit release _pid lock " + arms_data_lock +" finished"
+            print_coler(print_string,"g")
+        else:
+            print_string = "arms_work_transmit release _pid lock fail" + arms_data_lock
+            print_coler(print_string,"g")
+        return True
+        
     #result = det_pick_put.delay(container_info) #True: pick; False: store
     '''
     判斷是要撿取還是存取container並執行
@@ -644,7 +663,7 @@ def arms_work_transmit(self, arm_id):
     '''
     釋放手臂鎖    
     '''
-    result = release_lock(conn, arms_data_lock, lock_id)
+    result = release_lock(r, arms_data_lock, lock_id)
     if result:
         print("arms_work_transmit release _pid lock " + arms_data_lock +" finished")
     else:
@@ -658,12 +677,12 @@ robot_arm_tasks
 '''
 robot_arm_tasks
 '''
-@OFAI_Celery_func.task(bind=True, soft_time_limit= 172800, time_limit= 172800)
-def workstation_get(self, container_id):
-    r = redis.Redis(host='localhost', port=6379, decode_responses=False)
-    r.set("celery-task-meta-" + self.request.id, self.request.id)
-    # 工作站收到container
-    container_set_status(container_id,'in_workstation')
+# @OFAI_Celery_func.task(bind=True, soft_time_limit= 172800, time_limit= 172800)
+# def workstation_get(self, container_id):
+#     r = redis.Redis(host='localhost', port=6379, decode_responses=False)
+#     r.set("celery-task-meta-" + self.request.id, self.request.id)
+#     # 工作站收到container
+#     container_set_status(container_id,'in_workstation')
 
 # def order_check(self, workstation_id, order_id):
 #     uri = "mongodb+srv://liyiliou:liyiliou@cluster-yahoo-1.5gjuk.mongodb.net/Cluster-Yahoo-1?retryWrites=true&w=majority"
@@ -753,7 +772,13 @@ def container_operate(self, container_id, elevator_number):
     print("Picking container: container_id: " + container_id + "'s state is on_workstation")
         
     #工作站收到container_id
-    workstation_get.apply_async(args = [container_id], priority = low_priority)
+    if container_status(container_id) == "in_workstation":
+        print_string = "箱子重複到工作站 container data to workstation fail"
+        print_coler(print_string,"g")
+    else:
+        print("workstation_get 取得 " + container_id)
+    workstation_get(container_id)
+    
     #container_work_append 登入container 抵達工作站時間
     value_name = "container_arrive_time"
     content = datetime.datetime.now()
@@ -1013,6 +1038,8 @@ def elevator_store_move(self, elevator_lock_name, container_id, container_height
             result = waiting_func(waiting_time, start_time)
             while not result[0]:
                 result = waiting_func(waiting_time, start_time)
+                
+        print("elevator_store_move get _pid key " + arms_data_lock + " " + lock_id)
         redis_data_update_db(arm_id,value)
         result = release_lock(r, arms_data_lock, lock_id)
         if result:
