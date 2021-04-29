@@ -234,11 +234,13 @@ def workstation_open(self, workstation_id,index_label,index,num):
                     if container_movement()<20:
                         #箱子移動數少依時間配單
                         order_l = str(order_assign(index_label,index,num))
+                        print("目前 container 移動正常 使用common order assign ")
                     else:
                         #若目前箱子正在移動的數量太多會先分配商品在同一箱的訂單ｓ
                         order_l = str(order_assign_crunch(index_label,index,num))
+                        print("目前 container 移動擁擠 使用crunch order assign ")
                     print("分配訂單為："+order_l)
-                    print("訂單池給予訂單")
+                    print("訂單池給予訂單數為: "+str(len(eval(order_l))))
                     order_l_eval = eval(order_l)
                     #釋放訂單池ＤＢ
                     release_lock(r, lock_name, order_lock)
