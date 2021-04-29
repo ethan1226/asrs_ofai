@@ -2167,85 +2167,9 @@ def release_lock_r(lock_name, identifier):
                 pass
         return False
 
-def arms_work_transmit(self, arm_id):
-    # arms_dict = {}
-    # arms_dict[arm_id] = redis_dict_get(arm_id)    
-    r = redis.Redis(host='localhost', port=6379, decode_responses=False)
-    r.set("celery-task-meta-" + self.request.id, self.request.id)
-    '''
-    取手臂鎖
-    '''
-    conn = redis.Redis(host='localhost', port=6379, decode_responses=False)  
-    lock_name = arm_id+ "_pid"
-    lock_val = 1
-    while lock_val:
-        lock_id = acquire_lock_with_timeout(conn, lock_name, acquire_timeout= 2, lock_timeout= 100)
-        print("arms_work_transmit: waiting lock release " + lock_name)
-        if lock_id != False:
-            lock_val = 0
-    '''
-    取container資訊
-    '''
-    print("container_info = redis_dict_get_work(arm_id)")
-    #print(arms_dict[str(arm_id)]['works'].get())
-    #print(eval(arms_dict[str(arm_id)]['works'].get()))
-    #container_info = eval(arms_dict[str(arm_id)]['works'].get())
-    container_info = redis_dict_get_work(arm_id)
-    #result = det_pick_put.delay(container_info) #True: pick; False: store
-    '''
-    判斷是要撿取還是存取container並執行
-    '''
-    print("判斷是要撿取還是存取container並執行")
-    if container_info[0] == 1:
-        print("arms pick container id: "+str(container_info[3]))
-        arms_pick.delay(container_info[3])
-    else:
-        print("arms store container id: "+str(container_info[3])+" on arm id: "+str(arm_id))
-        arms_store.delay(container_info[3],arm_id)
-    
-    '''
-    釋放手臂鎖    
-    '''
-    release_lock(conn, lock_name, lock_id)
-    print("release_lock " + lock_name +" finished")
 
-    return True
 
-def container_operate_redis(self, container_id):
-    r = redis.Redis(host='localhost', port=6379, decode_responses=False)
-    r.set("celery-task-meta-" + self.request.id, self.request.id)
-    #工作站收到container_id
-    workstation_get.delay(container_id)
-    #工作站撿取container_id需求內容物
-    order_id_list_str, workstation_id = workstation_pick(container_id)
-    order_id_list = eval(order_id_list_str)
-    #依序判斷order_list內的order_id是否完成
-    for order_id in order_id_list:
-        if order_check(workstation_id, order_id):
-            print("workstation_id: "+str(workstation_id)+" finished order: "+str(order_id))
-            workstation_workend.delay(workstation_id, order_id)
-    #選擇放回去的arm_id
-    index_putback = 1
-    while index_putback:
-        try:
-            arm_id = container_putback(container_id)
-            index_putback = 0
-        except:
-            index_putback = 1
-        
-    oi = get_time_string()
-    value = (0,oi,0,container_id)
-    lock_name = arm_id+ "_pid"
-    lock_val = 1
-    while lock_val:
-        lock_id = acquire_lock_with_timeout(r, lock_name, acquire_timeout= 2, lock_timeout= 100)
-        print("container_operate: waiting lock release " + lock_name)
-        if lock_id != False:
-            lock_val = 0
-    redis_store_work_update(arm_id,value)
-    release_lock(r, lock_name, lock_id)
-    arms_work_transmit.delay(arm_id)
-    return True
+
 
 def Sigkill_func(self, task_id):
     celery.task.control.revoke(task_id, terminate=True, signal='SIGKILL')
