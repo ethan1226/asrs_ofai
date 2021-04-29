@@ -343,8 +343,8 @@ def arms_store(self, container_id,arm_id):
         if container_id in elevator_content:
             elevator_content.pop(container_id)
         else:
-            print("arms_store 多送一次 container " + str(container_id))
-            print("關掉arms_store程序")
+            print_string = "arms_store 多送一次 container " + str(container_id)+" 關掉arms_store程序"
+            print_coler(print_string,"g")
 
             result = release_lock(r, arm_lock_name, arm_lock)
             release_lock(r, elevator_content_key, lock_id)
@@ -649,16 +649,25 @@ def arms_work_transmit(self, arm_id):
     判斷是要撿取還是存取container並執行
     '''
     print("判斷是要撿取還是存取container並執行")
+    container_id = str(container_info[3])
     if container_info[0] == 1:
-        print("arms pick container id: "+str(container_info[3]))
-        arms_pick.apply_async(args = [container_info[3]], priority = low_priority)
-        #arms_pick.apply_async((container_info[3]), priority = 5)
-        redis_dict_turnover_pop(arm_id,container_info[3])
+        if container_status(container_id) == "waiting":
+            print("arms pick container id: "+str(container_id))
+            arms_pick.apply_async(args = [container_id], priority = low_priority)
+            #arms_pick.apply_async((container_info[3]), priority = 5)
+            redis_dict_turnover_pop(arm_id,container_id)
+        else:
+            print_string = "container_id: "+str(container_id)+" not in waiting for arm_pick with arm_id: "+str(arm_id)
+            print_coler(print_string,"g")
     else:
-        print("arms store container id: "+str(container_info[3])+" on arm id: "+str(arm_id))
-        arms_store.apply_async(args = [container_info[3],arm_id], priority = high_priority)
-        #arms_store.apply_async((container_info[3],arm_id), priority = 0)
-        redis_dict_turnover_push(arm_id,container_info[3])
+        if container_status(container_id) == "on_conveyor":
+            print("arms store container id: "+str(container_id)+" on arm id: "+str(arm_id))
+            arms_store.apply_async(args = [container_id,arm_id], priority = high_priority)
+            #arms_store.apply_async((container_info[3],arm_id), priority = 0)
+            redis_dict_turnover_push(arm_id,container_id)
+        else:
+            print_string = "container_id: "+str(container_id)+" not in waiting for arm_store with arm_id: "+str(arm_id)
+            print_coler(print_string,"g")
     
     '''
     釋放手臂鎖    
