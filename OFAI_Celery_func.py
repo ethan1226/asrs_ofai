@@ -785,7 +785,7 @@ def container_operate(self, container_id, elevator_number):
         
     #工作站收到container_id
     if container_status(container_id) == "in_workstation":
-        print_string = "箱子重複到工作站 container data to workstation fail"
+        print_string = "container_id: "+str(container_id)+" 重複到工作站 container data to workstation fail"
         print_coler(print_string,"g")
     else:
         print("workstation_get 取得 " + container_id)
@@ -1231,7 +1231,7 @@ def workstation_pick(container_id):
                 result = waiting_func(waiting_time, start_time)
             
             #需求量撿完刪除訂單商品並更新db
-            print("in workstation_pick output order id: "+str(output_order_id)+" 需求量撿完刪除訂單商品並更新db")
+            print("in workstation_pick from container_id: "+str(container_id)+" order id: "+str(output_order_id)+" 需求量撿完刪除訂單商品並更新db")
             if ws_work[output_order_id]["prd"][prd]["qt"] == 0:
                 print("order id: "+str(output_order_id)+" pid: "+str(prd)+" 需求量已滿足")
                 ws_work[output_order_id]["prd"].pop(prd,None)
@@ -1241,6 +1241,7 @@ def workstation_pick(container_id):
             workstation_db.update(myquery,newvalues)
     #撿完container後刪除並更新workstation_db
     for output_order_id in output_order_id_list:
+        print("in workstation_pick order_id: "+str(output_order_id)+"pop container_id:"+str(container_id))
         ws_work[output_order_id]["container"].pop(container_id,None)
         newvalues = { "$unset": { "work."+output_order_id+".container."+container_id:""}}
         workstation_db.update(myquery,newvalues)
