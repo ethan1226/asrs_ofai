@@ -650,8 +650,9 @@ def arms_work_transmit(self, arm_id):
     '''
     判斷是要撿取還是存取container並執行
     '''
-    print("判斷是要撿取還是存取container並執行")
+    
     container_id = container_info[3]
+    print("判斷是要撿取還是存取container並執行 container_id: "+str(container_id))
     if container_info[0] == 1:
         if container_status(container_id) == "waiting":
             print("arms pick container id: "+str(container_id))
@@ -1085,7 +1086,7 @@ def waiting_func(self, waiting_secs, start_time):
     high_priority = json_data['high_priority']
     #start_time = datetime.datetime.now()
     end_time = datetime.datetime.now()
-    remain_time = waiting_secs - (end_time - start_time).total_seconds()
+    remain_time = (waiting_secs/acc_rate) - (end_time - start_time).total_seconds()
     if remain_time > 0:
         return [False, remain_time]
     else:
@@ -1168,6 +1169,7 @@ def workreport_append(self, container_report, container_id):
 def workstation_pick(container_id):
     #工作站以從container撿取order所需物品
     #刪除 workstation work內工作 container 資訊
+    #修改container_db內容
     print("in workstation_pick contaioner_id : "+container_id)
     with open('參數檔.txt') as f:
         json_data = json.load(f)
@@ -1178,6 +1180,7 @@ def workstation_pick(container_id):
     client = pymongo.MongoClient(uri)
     db = client['ASRS-Cluster-0']
     workstation_db = db["Workstations"]
+    container_db = db["Containers"]
     work_info = workstation_db.aggregate([
                          {'$addFields': {"workTransformed": {'$objectToArray': "$work"}}},
                          {'$match': { 'workTransformed.v.container.'+container_id: {'$exists':1} }}
@@ -1196,11 +1199,16 @@ def workstation_pick(container_id):
     #刪除 container內要撿的商品並更新db
     container_content_pick = {}
     myquery = { "workstation_id": workstation_id}
+    print("in workstation_pick 刪除 container內要撿的商品並更新db")
     for output_order_id in output_order_id_list:
         for prd,pqt in ws_work[output_order_id]["container"][container_id].items():
-            print("in workstation_pick order_id: "+str(output_order_id)+" pick pid: "+str(prd)+" pqt: "+str(pqt))
+            print("in workstation_pick from container_id: "+str(container_id)+"pick order_id: "+str(output_order_id)+" pick pid: "+str(prd)+" pqt: "+str(pqt))
             ws_work[output_order_id]["prd"][prd]["qt"] -= pqt
-            container_content_pick[prd] = pqt
+            #用於 修改container_db 內容
+            if prd in container_content_pick:
+                container_content_pick[prd] += pqt
+            else:
+                container_content_pick[prd] = pqt
             newvalues = { "$inc": { "work."+output_order_id+".prd."+prd+".qt":-pqt}}
             
             #container_work_append 登入container 訂單編號 揀取商品 揀取數量
@@ -1223,9 +1231,13 @@ def workstation_pick(container_id):
                 result = waiting_func(waiting_time, start_time)
             
             #需求量撿完刪除訂單商品並更新db
+            print("in workstation_pick output order id: "+str(output_order_id)+" 需求量撿完刪除訂單商品並更新db")
             if ws_work[output_order_id]["prd"][prd]["qt"] == 0:
+                print("order id: "+str(output_order_id)+" pid: "+str(prd)+" 需求量已滿足")
                 ws_work[output_order_id]["prd"].pop(prd,None)
                 newvalues = { "$unset": { "work."+output_order_id+".prd."+prd:""}}
+            else:
+                print("order id: "+str(output_order_id)+" pid: "+str(prd)+" 需求量未滿足")
             workstation_db.update(myquery,newvalues)
     #撿完container後刪除並更新workstation_db
     for output_order_id in output_order_id_list:
