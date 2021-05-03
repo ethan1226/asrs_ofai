@@ -1202,7 +1202,7 @@ def workstation_pick(container_id):
     print("in workstation_pick 刪除 container內要撿的商品並更新db")
     for output_order_id in output_order_id_list:
         for prd,pqt in ws_work[output_order_id]["container"][container_id].items():
-            print("in workstation_pick from container_id: "+str(container_id)+"pick order_id: "+str(output_order_id)+" pick pid: "+str(prd)+" pqt: "+str(pqt))
+            print("in workstation_pick from container_id: "+str(container_id)+" pick order_id: "+str(output_order_id)+" pick pid: "+str(prd)+" pqt: "+str(pqt))
             ws_work[output_order_id]["prd"][prd]["qt"] -= pqt
             #用於 修改container_db 內容
             if prd in container_content_pick:
@@ -1210,7 +1210,7 @@ def workstation_pick(container_id):
             else:
                 container_content_pick[prd] = pqt
             newvalues = { "$inc": { "work."+output_order_id+".prd."+prd+".qt":-pqt}}
-            
+            workstation_db.update(myquery,newvalues)
             #container_work_append 登入container 訂單編號 揀取商品 揀取數量
             workreport_key = container_id
             value_name = "order_info"
@@ -1231,8 +1231,9 @@ def workstation_pick(container_id):
                 result = waiting_func(waiting_time, start_time)
             
             #需求量撿完刪除訂單商品並更新db
-            print("in workstation_pick from container_id: "+str(container_id)+" order id: "+str(output_order_id)+" 需求量撿完刪除訂單商品並更新db")
-            if ws_work[output_order_id]["prd"][prd]["qt"] == 0:
+            print("in workstation_pick from container_id: "+str(container_id)+" order id: "+str(output_order_id)+" container撿完刪除訂單商品並更新db")
+            # if ws_work[output_order_id]["prd"][prd]["qt"] == 0:
+            if workstation_db.find_one({"workstation_id":workstation_id})["work"][output_order_id]["prd"][prd]["qt"] == 0:
                 print("order id: "+str(output_order_id)+" pid: "+str(prd)+" 需求量已滿足")
                 ws_work[output_order_id]["prd"].pop(prd,None)
                 newvalues = { "$unset": { "work."+output_order_id+".prd."+prd:""}}
