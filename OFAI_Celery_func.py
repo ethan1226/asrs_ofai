@@ -175,6 +175,7 @@ def order_pick(self, workstation_id):
                                             lock_val = 0
                                     print("order_pick get _pid key " + arms_data_lock + " " + lock_id)
                                     redis_data_update_db(arm_id,value)
+                                    print("in order_pick redis_data_update arm_id: "+str(arm_id)+" update value: "+str(value))
                                     result = release_lock(r, arms_data_lock, lock_id)
                                     if result:
                                         print("order_pick release _pid lock" + arms_data_lock)
@@ -1233,13 +1234,19 @@ def workstation_pick(container_id):
             #需求量撿完刪除訂單商品並更新db
             print("in workstation_pick from container_id: "+str(container_id)+" order id: "+str(output_order_id)+" container撿完刪除訂單商品並更新db")
             # if ws_work[output_order_id]["prd"][prd]["qt"] == 0:
-            if workstation_db.find_one({"workstation_id":workstation_id})["work"][output_order_id]["prd"][prd]["qt"] == 0:
-                print("order id: "+str(output_order_id)+" pid: "+str(prd)+" 需求量已滿足")
-                ws_work[output_order_id]["prd"].pop(prd,None)
-                newvalues = { "$unset": { "work."+output_order_id+".prd."+prd:""}}
-                workstation_db.update(myquery,newvalues)
+            ws_pick_work = workstation_db.find_one({"workstation_id":workstation_id})["work"]
+            if output_order_id in ws_pick_work:
+                print("準備刪除訂單商品需求量")
+                if ws_pick_work[output_order_id]["prd"][prd]["qt"] == 0:
+                    print("order id: "+str(output_order_id)+" pid: "+str(prd)+" 需求量已滿足")
+                    ws_work[output_order_id]["prd"].pop(prd,None)
+                    newvalues = { "$unset": { "work."+output_order_id+".prd."+prd:""}}
+                    workstation_db.update(myquery,newvalues)
+                else:
+                    print("order id: "+str(output_order_id)+" pid: "+str(prd)+" 需求量未滿足")
             else:
-                print("order id: "+str(output_order_id)+" pid: "+str(prd)+" 需求量未滿足")
+                print_string = "order id :"+str(output_order_id)+" was deleted in workstation_id: "+str(workstation_id)
+                print_coler(print_string,"b")
             
     #撿完container後刪除並更新workstation_db
     for output_order_id in output_order_id_list:
