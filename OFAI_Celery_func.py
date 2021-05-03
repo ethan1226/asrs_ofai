@@ -1237,12 +1237,13 @@ def workstation_pick(container_id):
                 print("order id: "+str(output_order_id)+" pid: "+str(prd)+" 需求量已滿足")
                 ws_work[output_order_id]["prd"].pop(prd,None)
                 newvalues = { "$unset": { "work."+output_order_id+".prd."+prd:""}}
+                workstation_db.update(myquery,newvalues)
             else:
                 print("order id: "+str(output_order_id)+" pid: "+str(prd)+" 需求量未滿足")
-            workstation_db.update(myquery,newvalues)
+            
     #撿完container後刪除並更新workstation_db
     for output_order_id in output_order_id_list:
-        print("in workstation_pick order_id: "+str(output_order_id)+"pop container_id:"+str(container_id))
+        print("in workstation_pick order_id: "+str(output_order_id)+" pop container_id:"+str(container_id))
         ws_work[output_order_id]["container"].pop(container_id,None)
         newvalues = { "$unset": { "work."+output_order_id+".container."+container_id:""}}
         workstation_db.update(myquery,newvalues)
