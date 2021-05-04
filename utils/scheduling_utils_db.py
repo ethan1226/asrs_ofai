@@ -229,12 +229,13 @@ def order_assign_crunch(index_label,index,num):
                     full = True
                     break
                 else:
-                    output.append(order_id)
-                    order_dict[order_id]["status"] = "workstation"
-                    myquery = { "order_id": order_id }
-                    newvalues = { "$set": { "status": "workstation"}}
-                    order_db.update(myquery,newvalues)
-                    num -= 1
+                    if order_id not in output:
+                        output.append(order_id)
+                        order_dict[order_id]["status"] = "workstation"
+                        myquery = { "order_id": order_id }
+                        newvalues = { "$set": { "status": "workstation"}}
+                        order_db.update(myquery,newvalues)
+                        num -= 1
         else:
             break
     return output
@@ -2028,8 +2029,14 @@ def redis_dict_get_work(key):
     if value['works'].empty():
         return "empty"
     else:
+        before = value['works'].qsize()
         container_info = value['works'].get(timeout = 3.0)
         redis_dict_set(key, value)
+        after = value['works'].qsize()
+        if after<before:
+            print("redis_dict_get_work is good")
+        else:
+            print("redis_dict_get_work is bad")
         return container_info
 
 def redis_work_over(key):

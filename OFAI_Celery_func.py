@@ -232,7 +232,7 @@ def workstation_open(self, workstation_id,index_label,index,num):
                 #取得失敗
                 if order_lock != False:
                     #分配訂單 
-                    if container_movement()<20:
+                    if container_movement()<40:
                         #箱子移動數少依時間配單
                         order_l = str(order_assign(index_label,index,num))
                         print("目前 container 移動正常 使用common order assign ")
@@ -416,7 +416,23 @@ def arms_store(self, container_id,arm_id):
     #將 container_id 內商品更新 product
     product_push_container(container_id)
     print("Storaging container: container_id: " + container_id + "'s state is changed to in grid")
+    
+    arm_id = str(arm_id)
+    arms_data_lock = arm_id+ "_pid"
+    lock_val = 1
+    while lock_val:
+        arms_data_lock_id = acquire_lock_with_timeout(r, arms_data_lock, acquire_timeout= 2, lock_timeout= 172800)
+        print("arms_store: waiting lock release " + arms_data_lock)
+        if arms_data_lock_id != False:
+            lock_val = 0
+    print("arms_store get _pid key " + arms_data_lock + " " + arms_data_lock_id)
     redis_work_over(str(arm_id))
+    result = release_lock(r, arms_data_lock, arms_data_lock_id)
+    if result:
+        print("arms_store release _pid lock " + arms_data_lock +" finished")
+    else:
+        print_string = "arms_store release _pid lock fail" + arms_data_lock
+        print_coler(print_string,"g")
     #釋放手臂鎖
     result = release_lock(r, arm_lock_name, arm_lock)
     print("arms_store 釋放手臂鎖")
@@ -595,7 +611,23 @@ def arms_pick(self, container_id):
     r.set(elevator_content_key, dill.dumps(elevator_content))
     release_lock(r, elevator_content_key, lock_id)
     
+    arm_id = str(arm_id)
+    arms_data_lock = arm_id+ "_pid"
+    lock_val = 1
+    while lock_val:
+        arms_data_lock_id = acquire_lock_with_timeout(r, arms_data_lock, acquire_timeout= 2, lock_timeout= 172800)
+        print("arms_pick: waiting lock release " + arms_data_lock)
+        if arms_data_lock_id != False:
+            lock_val = 0
+    print("arms_pick get _pid key " + arms_data_lock + " " + arms_data_lock_id)
     redis_work_over(str(arm_id))
+    result = release_lock(r, arms_data_lock, arms_data_lock_id)
+    if result:
+        print("arms_pick release _pid lock " + arms_data_lock +" finished")
+    else:
+        print_string = "arms_pick release _pid lock fail" + arms_data_lock
+        print_coler(print_string,"g")
+    
     result = release_lock(r, arm_lock_name, arm_lock)
     print("arms_pick 釋放手臂鎖")
     
@@ -653,7 +685,7 @@ def arms_work_transmit(self, arm_id):
     '''
     
     container_id = container_info[3]
-    print("判斷是要撿取還是存取container並執行 container_id: "+str(container_id))
+    print("判斷是要撿取還是存取container並執行 container_id: "+str(container_id)+" container_info: "+str(container_info))
     if container_info[0] == 1:
         if container_status(container_id) == "waiting":
             print("arms pick container id: "+str(container_id))
@@ -1054,6 +1086,7 @@ def elevator_store_move(self, elevator_lock_name, container_id, container_height
                 
         print("elevator_store_move get _pid key " + arms_data_lock + " " + lock_id)
         redis_data_update_db(arm_id,value)
+        print("in elevator_store_move redis_data_update arm_id: "+str(arm_id)+" update value: "+str(value))
         result = release_lock(r, arms_data_lock, lock_id)
         if result:
             print("elevator_store_move release pid lock: " +  str(arms_data_lock))
