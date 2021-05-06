@@ -182,13 +182,17 @@ def order_pick(self, workstation_id):
                                     else:
                                         print_string = "order_pick release _pid lock fail" + arms_data_lock
                                         print_coler(print_string,"g")
+                                    #有訂單需求才送出工作
+                                    print("workstation id: "+str(workstation_id)+" oi: "+str(oi)+" arm_id: "+str(arm_id)+" layer: "+str(layer)+
+                                          " pid: "+str(pid)+" container_id: "+container_id)
+                                    arms_work_transmit.apply_async(args = [arm_id], priority = medium_priority)
                                 else:
                                     #container 內沒有訂單需求
                                     container_set_status(container_id,'in grid')
+                                    print_string = "container_id: " + str(container_id)+" 內沒有訂單需求狀態改回in grid"
+                                    print_coler(print_string,"g")
                                 # release_lock(r, lock_name, arm_product_lock)
-                                print("workstation id: "+str(workstation_id)+" oi: "+str(oi)+" arm_id: "+str(arm_id)+" layer: "+str(layer)+
-                                      " pid: "+str(pid)+" container_id: "+container_id)
-                                arms_work_transmit.apply_async(args = [arm_id], priority = medium_priority)
+                                
                         else:
                             layer_container_workloads_list_sort.insert(4,container_choosed)
                             release_lock(r, container_lock_name, container_lock)
@@ -1237,7 +1241,7 @@ def workstation_pick(container_id):
     for output_order_id in output_order_id_list:
         for prd,pqt in ws_work[output_order_id]["container"][container_id].items():
             print("in workstation_pick from container_id: "+str(container_id)+" pick order_id: "+str(output_order_id)+" pick pid: "+str(prd)+" pqt: "+str(pqt))
-            ws_work[output_order_id]["prd"][prd]["qt"] -= pqt
+            # ws_work[output_order_id]["prd"][prd]["qt"] -= pqt
             #用於 修改container_db 內容
             if prd in container_content_pick:
                 container_content_pick[prd] += pqt
@@ -1272,7 +1276,7 @@ def workstation_pick(container_id):
                 print("準備刪除訂單商品需求量")
                 if ws_pick_work[output_order_id]["prd"][prd]["qt"] == 0:
                     print("order id: "+str(output_order_id)+" pid: "+str(prd)+" 需求量已滿足")
-                    ws_work[output_order_id]["prd"].pop(prd,None)
+                    # ws_work[output_order_id]["prd"].pop(prd,None)
                     newvalues = { "$unset": { "work."+output_order_id+".prd."+prd:""}}
                     workstation_db.update(myquery,newvalues)
                 else:
@@ -1284,7 +1288,7 @@ def workstation_pick(container_id):
     #撿完container後刪除並更新workstation_db
     for output_order_id in output_order_id_list:
         print("in workstation_pick order_id: "+str(output_order_id)+" pop container_id:"+str(container_id))
-        ws_work[output_order_id]["container"].pop(container_id,None)
+        # ws_work[output_order_id]["container"].pop(container_id,None)
         newvalues = { "$unset": { "work."+output_order_id+".container."+container_id:""}}
         workstation_db.update(myquery,newvalues)
     #更新container_db
