@@ -1215,8 +1215,8 @@ def container_putback(container_id):
         for k,v in contents.items():
             if k in arms_data["0"] or k in arms_data["1"]:
                 clear_space = False
-        #若不存在於此手臂內又剩餘空間還大於10個
-        if clear_space and find_empty_arms_sid_num(arm_score_list[list_n][0])>10:
+        #若不存在於此手臂內又剩餘空間還大於25個
+        if clear_space and find_empty_arms_sid_num(arm_score_list[list_n][0])>20:
             return arm_score_list[list_n][0]
     return arm_score_list[0][0]
 
