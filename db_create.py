@@ -22,7 +22,7 @@ def find_empty_arms_sid_num_db_create(storage_dict, arm_id):
 
 #從execl撈訂單資訊
 file = "yahoo_order_info.xlsx"
-yahoo_order_record = pd.read_excel(file , dtype=str)
+yahoo_order_record = pd.read_excel(file , dtype=str,engine='openpyxl')
 yahoo_order_record['日期'] = yahoo_order_record['日期'].astype(int).astype(str)
 
 product_call = list(pd.Series(yahoo_order_record['品號']))
@@ -159,6 +159,7 @@ permu_candidate = [list(range(grid_capacity_x)), list(range(grid_capacity_y)), l
 possible_spot = list(itertools.product(*permu_candidate))
 storage_dict = {}
 ite = 0
+elevator_list = []
 for k, v in nodes.items():
     if v['type'] == 'grid_node':
         #只留layer_height以下的
@@ -168,6 +169,8 @@ for k, v in nodes.items():
             coordinates = nodes[k]['coordinates']
             for k_n,v_n in nodes.items():
                 if v_n["coordinates"][0] == coordinates[0]+1 and v_n["coordinates"][2] == coordinates[2] and v_n['type'] == "conj_node":
+                    if k_n not in elevator_list:
+                        elevator_list.append(k_n)
                     elevator_id = k_n
                     
             for p in list(itertools.product([grid_id], possible_spot)):
@@ -320,7 +323,7 @@ for k,v in storage_dict.items():
                            "contents":v["contents"],
                            "arm_id":v["arm_id"],
                            "grid_id":v["grid_id"],
-                           "elevator_id":elevator_id,
+                           "elevator_id":v["elevator_id"],
                            "relative_coords":v["relative_coords"],
                            "coordinates":v["coordinates"]
                            }} 
