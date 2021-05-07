@@ -320,7 +320,7 @@ def arms_store(self, container_id,arm_id):
     arm_id = str(arm_id)
     storage_id = find_empty_arms_sid(arm_id)
     if storage_id == "":
-        print_string = " in arm store storage_id is empty"
+        print_string = " in arm store arm_id: "+str(arm_id)+" storage_id is empty"
         print_coler(print_string,"g")
     
     #手臂去電梯口等電梯
@@ -1245,7 +1245,7 @@ def arm_report_append(self, arm_id, start_work_time, end_work_time, container_id
     else:
         arm_report = []
     single_record = [start_work_time, end_work_time, container_id, work_type, start_position, elevator_position, container_position]
-    arm_report.append(single_record_record)
+    arm_report.append(single_record)
     r.set(key , dill.dumps(arm_report))
     print("set arm_report")
     print(arm_id)
@@ -1402,6 +1402,14 @@ def workstation_pick(container_id):
             else:
                 print("workstation_pick content == None")
             
+            '''
+            記錄有被撿到的單
+            '''
+            r = redis.Redis(host='localhost', port=6379, decode_responses=False)
+            if r.exists("order_list_record_" + output_order_id):
+                pass
+            else:
+                r.set("order_list_record_" + output_order_id, 1)
             #根據揀取商品數量模擬揀取時間
             '''
             模擬揀單個商品花3秒
@@ -1428,7 +1436,7 @@ def workstation_pick(container_id):
                         print("order id: "+str(output_order_id)+" pid: "+str(prd)+" 需求量未滿足")
                 else:
                     print_string = "in workstation_pick workstation_id: "+str(workstation_id)+" in order id: "+str(output_order_id)+" prd: "+str(prd)+" 已被刪除"
-                print_coler(print_string,"b")
+                    print_coler(print_string,"b")
             else:
                 print_string = "order id :"+str(output_order_id)+" was deleted in workstation_id: "+str(workstation_id)
                 print_coler(print_string,"b")
