@@ -319,6 +319,9 @@ def arms_store(self, container_id,arm_id):
     print("arms_store container_id: "+str(container_id)+" arm_id: "+str(arm_id))
     arm_id = str(arm_id)
     storage_id = find_empty_arms_sid(arm_id)
+    if storage_id == "":
+        print_string = " in arm store storage_id is empty"
+        print_coler(print_string,"g")
     
     #手臂去電梯口等電梯
     grid_id = eval(storage_id)[0]

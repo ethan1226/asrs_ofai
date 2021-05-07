@@ -429,7 +429,7 @@ def find_empty_arms_sid(arm_id):
             else:
                 return(sid)
     else:
-        return(None)
+        return("")
     
 def find_empty_arms_sid_num(arm_id):
     '''
@@ -1152,18 +1152,22 @@ def container_putback(container_id):
     elevator_workloads = {}
     #arm elevator 使用率
     arm_elevator = {}
+    #arm空位數
+    arm_fillment_score = {}
     #arm分數
     arm_score = {}
     #分數佔例
     coefficient_arms_workloads = 1.0
     coefficient_arms_turnover = 0.5
     coefficient_arms_elevator = 2.0
-    coefficient_total = coefficient_arms_workloads + coefficient_arms_turnover + coefficient_arms_elevator
+    coefficient_arms_fillment = 1.0
+    coefficient_total = coefficient_arms_workloads + coefficient_arms_turnover + coefficient_arms_elevator + coefficient_arms_fillment
     for arms_key in arm_key_all:
         # 存取目前手臂工作量 周轉數 跟移動電梯使用工作量
         arms_data = redis_dict_get(arms_key)
         arm_workloads[arms_key] = arms_data["workload"]
         arm_turnover[arms_key] = arms_data["turnover"]
+        arm_fillment_score[arms_key] = find_empty_arms_sid_num(arms_key)
         arm_id = eval(arms_key)
         if arm_id[0] not in elevator_workloads:
             elevator_workloads[arm_id[0]] = arm_workloads[arms_key]
@@ -1180,22 +1184,30 @@ def container_putback(container_id):
     
     for arms_key in arm_key_all:
         #統計各手臂相關分數
+        #手臂工作量分數正規化
         if arm_workloads[max(arm_workloads, key=arm_workloads.get)] == 0:
             arm_score_workloads = arm_workloads[arms_key]
         else:
             arm_score_workloads = arm_workloads[arms_key]/arm_workloads[max(arm_workloads, key=arm_workloads.get)]
-            
+        #手臂內商品週轉率分數正規化
         if arm_turnover[max(arm_turnover, key=arm_turnover.get)] == 0:
             arm_score_turnover = arm_turnover[arms_key]
         else:
             arm_score_turnover = arm_turnover[arms_key]/arm_turnover[max(arm_turnover, key=arm_turnover.get)]
-        
+        #手臂電梯分數正規化
         if arm_elevator[max(arm_elevator, key=arm_elevator.get)] == 0:
             arm_score_elevator = arm_elevator[arms_key]
         else:
             arm_score_elevator = arm_elevator[arms_key]/arm_elevator[max(arm_elevator, key=arm_elevator.get)]
-        #手臂總分數 = 手臂工作量 + 手臂內商品週轉率 + 手臂電梯目前使用量
+        #手臂空位分數正規化
+        if arm_fillment_score[max(arm_fillment_score, key=arm_fillment_score.get)] == 0:
+            arm_score_fillment = arm_fillment_score[arms_key]
+        else:
+            arm_score_fillment = arm_fillment_score[arms_key]/arm_fillment_score[max(arm_fillment_score, key=arm_fillment_score.get)]
+        
+        #手臂總分數 = 手臂工作量 + 手臂內空位數 + 手臂內商品週轉率 + 手臂電梯目前使用量
         arm_score[arms_key] = (coefficient_arms_workloads*(1-arm_score_workloads) + \
+                               coefficient_arms_fillment*(arm_score_fillment) + \
                                coefficient_arms_turnover*(1-arm_score_turnover) + \
                                coefficient_arms_elevator*(1-arm_score_elevator))/ coefficient_total
         # if arm_prdreserve[max(arm_prdreserve, key=arm_prdreserve.get)] == 0:
