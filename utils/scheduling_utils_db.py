@@ -635,12 +635,15 @@ def arms_arrange(arm_id):
     
     #將排序老的container放入 先放前兩個的 1/4 在內層 再放剩餘的在外層 保證外層比內層多 
     total_row = len(container_turnover_sort)//4
+    #上層位置擺放的container
     upper_container = []
+    #下層位置擺放的container
     lower_container = []
     for container in container_turnover_sort[0:total_row*2]:
         upper_container.append(container[0])
     for container in container_turnover_sort[total_row*2:]:
         lower_container.append(container[0])
+    #整理後順序 先放下層在放上層
     arrange_location = []
     for n in range(len(upper_container)):
         arrange_location.append([storage_location[n],upper_container[n]])
