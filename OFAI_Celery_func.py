@@ -174,8 +174,11 @@ def order_pick(self, workstation_id):
                                         if lock_id != False:
                                             lock_val = 0
                                     print("order_pick get _pid key " + arms_data_lock + " " + lock_id)
+                                    
                                     redis_data_update_db(arm_id,value)
                                     print("in order_pick redis_data_update arm_id: "+str(arm_id)+" update value: "+str(value))
+                                    redis_dict_work_assign(arm_id)
+                                    print("order_pick assign arm_id: "+str(arm_id)+" workload +1")
                                     result = release_lock(r, arms_data_lock, lock_id)
                                     if result:
                                         print("order_pick release _pid lock" + arms_data_lock)
@@ -443,7 +446,7 @@ def arms_store(self, container_id,arm_id):
         if arms_data_lock_id != False:
             lock_val = 0
     print("arms_store get _pid key " + arms_data_lock + " " + arms_data_lock_id)
-    redis_work_over(str(arm_id))
+    redis_dict_work_over(str(arm_id))
     result = release_lock(r, arms_data_lock, arms_data_lock_id)
     if result:
         print("arms_store release _pid lock " + arms_data_lock +" finished")
@@ -651,7 +654,7 @@ def arms_pick(self, container_id):
         if arms_data_lock_id != False:
             lock_val = 0
     print("arms_pick get _pid key " + arms_data_lock + " " + arms_data_lock_id)
-    redis_work_over(str(arm_id))
+    redis_dict_work_over(str(arm_id))
     result = release_lock(r, arms_data_lock, arms_data_lock_id)
     if result:
         print("arms_pick release _pid lock " + arms_data_lock +" finished")
@@ -882,7 +885,34 @@ def workstation_operate(self, container_id, elevator_number):
             print_string = "restart find arm_id to putback container"
             print_coler(print_string,"g")
             index_putback = 1
-
+    
+    '''
+    取手臂鎖
+    '''
+    arms_data_lock = arm_id+ "_pid"
+    lock_val = 1
+    while lock_val:
+        lock_id = acquire_lock_with_timeout(r, arms_data_lock, acquire_timeout= 2, lock_timeout= 172800)
+        print("arms_work_transmit: waiting lock release " + arms_data_lock)
+        if lock_id != False:
+            lock_val = 0
+    print("workstation_operate get _pid key " + arms_data_lock + " " + lock_id)
+    
+    
+    print("workstation_operate assign arm_id: "+str(arm_id)+" work and workload +1")
+    redis_dict_work_assign(arm_id)
+    
+    '''
+    釋放手臂鎖    
+    '''
+    result = release_lock(r, arms_data_lock, lock_id)
+    if result:
+        print("workstation_operate release _pid lock " + arms_data_lock +" finished")
+    else:
+        print_string = "workstation_operate release _pid lock fail" + arms_data_lock
+        print_coler(print_string,"g")
+    return True
+    
     start_time = datetime.datetime.now()
     waiting_time = 10 / acc_rate
     result = waiting_func(waiting_time, start_time)
@@ -1132,6 +1162,7 @@ def elevator_store_move(self, elevator_lock_name, container_id, container_height
                 
         print("elevator_store_move get _pid key " + arms_data_lock + " " + lock_id)
         redis_data_update_db(arm_id,value)
+        #redis_dict_work_assign(arm_id)
         print("in elevator_store_move redis_data_update arm_id: "+str(arm_id)+" update value: "+str(value))
         result = release_lock(r, arms_data_lock, lock_id)
         if result:
