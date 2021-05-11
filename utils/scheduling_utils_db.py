@@ -1446,6 +1446,7 @@ def container_exception():
                 if lock_id != False:
                     lock_val = 0
             redis_data_update_db(arm_id,value)
+            redis_dict_work_assign(arm_id)
             release_lock(r, lock_name, lock_id)
             arms_work_transmit.delay(arm_id)
         else:
@@ -1473,6 +1474,7 @@ def container_exception():
                 if lock_id != False:
                     lock_val = 0
             redis_data_update_db(arm_id,value)
+            redis_dict_work_assign(arm_id)
             release_lock(r, lock_name, lock_id)
             arms_work_transmit.delay(arm_id)
 
@@ -1878,87 +1880,99 @@ def redis_data_update_db(key,value):
     if content != None:
         one_dict = dill.loads(content)
         #更正工作量跟工作
-        one_dict['workload'] += 1
+        # one_dict['workload'] += 1
         one_dict["works"].put(value)
     r.set(key,dill.dumps(one_dict))
 
-def redis_pick_data_update(key,value,layer):
-    container_id =value[3]
+def redis_dict_work_assign(key):
     r = redis.Redis(host='localhost', port=6379, decode_responses=False)
     one_dict = {}
     content = r.get(key)
     if content != None:
         one_dict = dill.loads(content)
-        #刪除 redis裡面的機器手臂可撿商品資訊
-        pop_k = []
-        for pid,pid_container_qt in one_dict[layer].items():
-            for pid_container,pid_qt in pid_container_qt.items():
-                if container_id == pid_container:
-                    pop_k.append(pid)
-        for pid_pop in pop_k:
-            one_dict[layer][pid_pop].pop(container_id)
-            if one_dict[layer][pid_pop] == {}:
-                one_dict[layer].pop(pid_pop)
         #更正工作量跟工作
         one_dict['workload'] += 1
-        one_dict["works"].put(value)
     r.set(key,dill.dumps(one_dict))
+
+
+
+# def redis_pick_data_update(key,value,layer):
+#     container_id =value[3]
+#     r = redis.Redis(host='localhost', port=6379, decode_responses=False)
+#     one_dict = {}
+#     content = r.get(key)
+#     if content != None:
+#         one_dict = dill.loads(content)
+#         #刪除 redis裡面的機器手臂可撿商品資訊
+#         pop_k = []
+#         for pid,pid_container_qt in one_dict[layer].items():
+#             for pid_container,pid_qt in pid_container_qt.items():
+#                 if container_id == pid_container:
+#                     pop_k.append(pid)
+#         for pid_pop in pop_k:
+#             one_dict[layer][pid_pop].pop(container_id)
+#             if one_dict[layer][pid_pop] == {}:
+#                 one_dict[layer].pop(pid_pop)
+#         #更正工作量跟工作
+#         one_dict['workload'] += 1
+#         one_dict["works"].put(value)
+#     r.set(key,dill.dumps(one_dict))
     
-def redis_store_work_update(key,value):
-    container_id =value[3]
-    r = redis.Redis(host='localhost', port=6379, decode_responses=False)
-    one_dict = {}
-    content = r.get(key)
-    if content != None:
-        one_dict = dill.loads(content)        
-        #更正工作量跟工作
-        one_dict['workload'] += 1
-        one_dict["works"].put(value)
-    r.set(key,dill.dumps(one_dict))
+# def redis_store_work_update(key,value):
+#     container_id =value[3]
+#     r = redis.Redis(host='localhost', port=6379, decode_responses=False)
+#     one_dict = {}
+#     content = r.get(key)
+#     if content != None:
+#         one_dict = dill.loads(content)        
+#         #更正工作量跟工作
+#         one_dict['workload'] += 1
+#         one_dict["works"].put(value)
+#     r.set(key,dill.dumps(one_dict))
 
-def redis_store_data_update(key,container_id,layer):
-    with open('參數檔.txt') as f:
-        json_data = json.load(f)
-    uri = json_data["uri"]    
-    r = redis.Redis(host='localhost', port=6379, decode_responses=False)
-    try:
-        client = pymongo.MongoClient(uri)
-        db = client['ASRS-Cluster-0']
-    except:
-        Sigkill_func(self.request.id)
-    container_db = db["Containers"]
-    container_content = container_db.find_one({"container_id":container_id})['contents']
-    one_dict = {}
-    content = r.get(key)
-    layer = str(layer)
-    if content != None:
-        one_dict = dill.loads(content)
-        #新增 redis裡面的機器手臂可撿商品資訊
-        for content_k,content_v in container_content.items():
-            if content_k in one_dict[layer]:
-                one_dict[layer][content_k].update({container_id:content_v})
-            else:
-                one_dict[layer][content_k] = {container_id:content_v}
-    r.set(key,dill.dumps(one_dict))
+# def redis_store_data_update(key,container_id,layer):
+#     with open('參數檔.txt') as f:
+#         json_data = json.load(f)
+#     uri = json_data["uri"]    
+#     r = redis.Redis(host='localhost', port=6379, decode_responses=False)
+#     try:
+#         client = pymongo.MongoClient(uri)
+#         db = client['ASRS-Cluster-0']
+#     except:
+#         Sigkill_func(self.request.id)
+#     container_db = db["Containers"]
+#     container_content = container_db.find_one({"container_id":container_id})['contents']
+#     one_dict = {}
+#     content = r.get(key)
+#     layer = str(layer)
+#     if content != None:
+#         one_dict = dill.loads(content)
+#         #新增 redis裡面的機器手臂可撿商品資訊
+#         for content_k,content_v in container_content.items():
+#             if content_k in one_dict[layer]:
+#                 one_dict[layer][content_k].update({container_id:content_v})
+#             else:
+#                 one_dict[layer][content_k] = {container_id:content_v}
+#     r.set(key,dill.dumps(one_dict))
 
-def redis_data_update(key,value,layer):
-    container_id =value[3]
-    r = redis.Redis(host='localhost', port=6379, decode_responses=False)
-    one_dict = {}
-    content = r.get(key)
-    if content != None:
-        one_dict = dill.loads(content)
-        #刪除 redis裡面的機器手臂可撿商品資訊
-        pop_k = []
-        for content_k,content_v in one_dict[layer].items():
-            if container_id in content_v["container_id"]:
-                pop_k.append(content_k)
-        for popk in pop_k:
-            one_dict[layer].pop(popk)
-        #更正工作量跟工作
-        one_dict['workload'] += 1
-        one_dict["works"].put(value)
-    r.set(key,dill.dumps(one_dict))
+# def redis_data_update(key,value,layer):
+#     container_id =value[3]
+#     r = redis.Redis(host='localhost', port=6379, decode_responses=False)
+#     one_dict = {}
+#     content = r.get(key)
+#     if content != None:
+#         one_dict = dill.loads(content)
+#         #刪除 redis裡面的機器手臂可撿商品資訊
+#         pop_k = []
+#         for content_k,content_v in one_dict[layer].items():
+#             if container_id in content_v["container_id"]:
+#                 pop_k.append(content_k)
+#         for popk in pop_k:
+#             one_dict[layer].pop(popk)
+#         #更正工作量跟工作
+#         one_dict['workload'] += 1
+#         one_dict["works"].put(value)
+#     r.set(key,dill.dumps(one_dict))
 
 def redis_data_interchange(src_storage_id,dst_storage_id,container_id):
     #移動箱子更新redis data
@@ -2054,7 +2068,7 @@ def redis_dict_get_work(key):
             print("redis_dict_get_work is bad")
         return container_info
 
-def redis_work_over(key):
+def redis_dict_work_over(key):
     value = redis_dict_get(key)
     value['workload'] -= 1
     redis_dict_set(key, value)
