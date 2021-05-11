@@ -1442,7 +1442,7 @@ def container_exception():
             lock_val = 1
             while lock_val:
                 lock_id = acquire_lock_with_timeout(r, lock_name, acquire_timeout= 2, lock_timeout= 100)
-                print("container_operate: waiting lock release " + lock_name)
+                print("workstation_operate: waiting lock release " + lock_name)
                 if lock_id != False:
                     lock_val = 0
             redis_data_update_db(arm_id,value)
@@ -1469,7 +1469,7 @@ def container_exception():
             lock_val = 1
             while lock_val:
                 lock_id = acquire_lock_with_timeout(r, lock_name, acquire_timeout= 2, lock_timeout= 100)
-                print("container_operate: waiting lock release " + lock_name)
+                print("workstation_operate: waiting lock release " + lock_name)
                 if lock_id != False:
                     lock_val = 0
             redis_data_update_db(arm_id,value)

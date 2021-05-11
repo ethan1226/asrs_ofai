@@ -236,7 +236,7 @@ def workstation_open(self, workstation_id,index_label,index,num):
                 #取得失敗
                 if order_lock != False:
                     #分配訂單 
-                    if container_movement()<40:
+                    if container_movement()<30:
                         #箱子移動數少依時間配單
                         order_l = str(order_assign(index_label,index,num))
                         print("目前 container 移動正常 使用common order assign ")
@@ -829,7 +829,7 @@ def workstation_workend(self, workstation_id,order_id):
     
 
 @OFAI_Celery_func.task(bind=True, soft_time_limit= 172800, time_limit= 172800)
-def container_operate(self, container_id, elevator_number):
+def workstation_operate(self, container_id, elevator_number):
     r = redis.Redis(host='localhost', port=6379, decode_responses=False)
     r.set("celery-task-meta-" + self.request.id, self.request.id)
     with open('參數檔.txt') as f:
@@ -838,8 +838,9 @@ def container_operate(self, container_id, elevator_number):
     low_priority = json_data['low_priority']
     medium_priority = json_data['medium_priority']
     high_priority = json_data['high_priority']
+    conveyor_speed = json_data['conveyor_speed']
     #計算運輸時間
-    transport_time = (int(elevator_number) * 2 + 10) / acc_rate
+    transport_time = (int(elevator_number) * 2 + conveyor_speed) / acc_rate
     #模擬運輸時間
     start_time = datetime.datetime.now()
     result = waiting_func(transport_time, start_time)
@@ -895,7 +896,7 @@ def container_operate(self, container_id, elevator_number):
 #     lock_val = 1
 #     while lock_val:
 #         lock_id = acquire_lock_with_timeout(r, lock_name, acquire_timeout= 2, lock_timeout= 100)
-#         print("container_operate: waiting lock release " + lock_name)
+#         print("workstation_operate: waiting lock release " + lock_name)
 #         if lock_id != False:
 #             lock_val = 0
 #     redis_data_update_db(arm_id,value)
@@ -912,7 +913,7 @@ def container_operate(self, container_id, elevator_number):
     
     #計算運輸時間
     elevator_number = eval(str(arm_id))[0]
-    transport_time = (int(elevator_number) * 2 + 10) / acc_rate
+    transport_time = (int(elevator_number) * 2 + conveyor_speed) / acc_rate
     
     #模擬運輸時間
     start_time = datetime.datetime.now()
@@ -1004,7 +1005,7 @@ def elevator_pick_move(self,elevator_lock_name, container_id, container_height):
 
         #送到輸送帶上，更改container
         elevator_number = elevator_lock_name[-1]
-        container_operate.apply_async(args = [container_id, elevator_number], priority = low_priority)
+        workstation_operate.apply_async(args = [container_id, elevator_number], priority = low_priority)
 
 
         #電梯開始工作
@@ -1205,10 +1206,7 @@ def container_report_append(self, container_id, value_name, content):
         if value_name != 'order_info':
             report_content = {}
             container_report[value_name] = content
-        else:
-            order_info = []
-            order_info.append(content)
-            container_report["order_info"] = order_info
+        
             
     print("set container_report")
     print(container_id)
@@ -1254,11 +1252,13 @@ def arm_report_append(self, arm_id, start_work_time, end_work_time, container_id
 @OFAI_Celery_func.task(bind=True, soft_time_limit= 172800, time_limit= 172800)
 def workreport_append_container(self, container_report, container_id):
     r = redis.Redis(host='localhost', port=6379, decode_responses=False)
-    if r.exists("workreport_container") == 1:
-        workreport = r.get("workreport_container")
+    workreport_key = "workreport_container_" + container_id
+    if r.exists(workreport_key) == 1:
+        workreport = r.get(workreport_key)
         workreport = dill.loads(workreport)
     else:
-        workreport = {}
+        #workreport = {}
+        workreport = []
         
     order_id_list = container_report["order_info"]
     print(container_report)
@@ -1273,9 +1273,43 @@ def workreport_append_container(self, container_report, container_id):
         content["container_id"] = container_id
         print(order_info)
         #content.pop('order_info')
-        workreport[str(report_key)] = content
-
-    r.set("workreport_container", dill.dumps(workreport))
+        #workreport[str(report_key)] = content
+        workreport.append([report_key, content])
+    r.set(workreport_key, dill.dumps(workreport))
+# =============================================================================
+#     r = redis.Redis(host='localhost', port=6379, decode_responses=False)
+#     lock_name = "workreport_append_container_recorder"
+#     lock_id = acquire_lock_with_timeout(r, lock_name, acquire_timeout=2, lock_timeout= 172800)
+#     while not lock_id:
+#         lock_id = acquire_lock_with_timeout(r, lock_name, acquire_timeout=2, lock_timeout= 172800)
+#     print("workreport_append_container locked " + lock_id)
+#     if r.exists("workreport_container") == 1:
+#         workreport = r.get("workreport_container")
+#         workreport = dill.loads(workreport)
+#     else:
+#         #workreport = {}
+#         workreport = []
+#         
+#     order_id_list = container_report["order_info"]
+#     print(container_report)
+#     for order_info in order_id_list:
+#         order_id = order_info[0]
+#         product_id = order_info[1]
+#         pick_num = order_info[2]
+#         pick_time = order_info[3]
+#         workstation_id = order_info[4]
+#         report_key = order_info
+#         content = container_report
+#         content["container_id"] = container_id
+#         print(order_info)
+#         #content.pop('order_info')
+#         #workreport[str(report_key)] = content
+#         workreport.append([report_key, content])
+# 
+# 
+#     r.set("workreport_container", dill.dumps(workreport))
+#     release_lock(r, lock_name, lock_id)
+# =============================================================================
     print("workreport_append_container order_id_list: " + str(order_id_list) + " with container_id: " + container_id)
     
 @OFAI_Celery_func.task(bind=True, soft_time_limit= 172800, time_limit= 172800)
@@ -1367,10 +1401,16 @@ def workstation_pick(container_id):
                          {'$addFields': {"workTransformed": {'$objectToArray': "$work"}}},
                          {'$match': { 'workTransformed.v.container.'+container_id: {'$exists':1} }}
                                      ])
+    ws_work = ""
     for w_1 in work_info:
         # print("in workstation_pick contaioner_id : ",container_id," w_1: ",w_1)
         ws_work = w_1['work']
         workstation_id = w_1['workstation_id']
+        
+    if ws_work == "":
+        print_string = "fail, In workstation_pick ws_work == None!!!"
+        print_coler(print_string,"b")
+        return True
     # 找有哪些訂單有container
     output_order_id_list = []
     for order_id,order_pickup in ws_work.items():
