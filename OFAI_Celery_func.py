@@ -320,7 +320,7 @@ def arms_store(self, container_id,arm_id):
     arm_id = str(arm_id)
     storage_id = find_empty_arms_sid(arm_id)
     if storage_id == "":
-        print_string = " in arm store arm_id: "+str(arm_id)+" storage_id is empty"
+        print_string = " in arm store storage_id is empty"
         print_coler(print_string,"g")
     
     #手臂去電梯口等電梯
