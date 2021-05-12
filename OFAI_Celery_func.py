@@ -530,7 +530,7 @@ def arms_pick(self, container_id):
     if container_info['relative_coords']['rx'] == 1:
         print("在上層,直接取出" + str(container_id))
         #在上層直接取出
-        container_set_status(container_id,'on_conveyor')
+        container_set_status(container_id,'conveyor_to_ws')
         container_grid(container_id,-1)
         storage_pop(container_id)
     else:
@@ -545,7 +545,7 @@ def arms_pick(self, container_id):
         if upper.count() == 0 :
             print("上層沒有東西,直接取出")
             #上層沒有東西,直接取出
-            container_set_status(container_id,'on_conveyor')
+            container_set_status(container_id,'conveyor_to_ws')
             container_grid(container_id,-1)
             storage_pop(container_id)
         else:
@@ -585,7 +585,7 @@ def arms_pick(self, container_id):
             container_moveto(upper_container,moveto)
             storage_interchange(upper_storage_id,moveto)
             #再將 container_id放到conveyor
-            container_set_status(container_id,'on_conveyor')
+            container_set_status(container_id,'conveyor_to_ws')
             container_grid(container_id,-1)
             storage_pop(container_id)
             
@@ -733,7 +733,7 @@ def arms_work_transmit(self, arm_id):
             print_string = "container_id: "+str(container_id)+" not in waiting for arm_pick with arm_id: "+str(arm_id)
             print_coler(print_string,"g")
     else:
-        if container_status(container_id) == "on_conveyor":
+        if container_status(container_id) == "ws_to_conveyor":
             print("arms store container id: "+str(container_id)+" on arm id: "+str(arm_id))
             arms_store.apply_async(args = [container_id,arm_id], priority = high_priority)
             #arms_store.apply_async((container_info[3],arm_id), priority = 0)
@@ -935,7 +935,7 @@ def workstation_operate(self, container_id, elevator_number):
 # =============================================================================
     
     #將 container 送回輸送帶上，從工作站返回倉庫
-    container_set_status(container_id,'on_conveyor')
+    container_set_status(container_id,'ws_to_conveyor')
     #container_work_append 登入container 入庫開始時間
     value_name = "container_store_start_time"
     content = datetime.datetime.now()
