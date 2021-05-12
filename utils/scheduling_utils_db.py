@@ -398,6 +398,77 @@ def find_empty_sid():
     else:
         return(None)
 
+def find_empty_arms_sid_by_turnover(arm_id,container_id):
+    '''
+    在arm_id下找一個空的sid
+    '''
+    
+    with open('參數檔.txt') as f:
+        json_data = json.load(f)
+    uri = json_data["uri"]
+    client = pymongo.MongoClient(uri)
+    db = client['ASRS-Cluster-0']
+    storage_db = db["Storages"]
+    
+    #此手臂上的全部 grid_id
+    grid_list = []
+    total_storage = 0
+    for si in storage_db.find({"arm_id":arm_id}):
+        grid_id = si["grid_id"]
+        total_storage += 1
+        if grid_id not in grid_list:
+            grid_list.append(grid_id)
+    #分成左右邊
+    grid_l = grid_list[0:27]
+    grid_r = grid_list[27:54]
+    #此手臂上目前的空位
+    empty_grid = []
+    #找在storage裡container是空的位置並且arm_id為需求者
+    for storage_info in storage_db.find({"container_id":"","arm_id":arm_id}):
+        empty_grid.append(storage_info["storage_id"])
+    #將空位給分數
+    storage_score = {}
+    for storage_i in empty_grid:
+        storage_eval =  eval(storage_i)
+        grid = storage_eval[0]
+        #0是下層 1是上層
+        layer = storage_eval[1][0]
+        if grid < grid_r[0]:
+            #在左側
+            dist= grid - grid_l[0]
+            score = dist + abs(layer - 1)*np.sqrt(dist)
+        else:
+            #在右側
+            dist= grid - grid_r[0]
+            score = dist + abs(layer - 1)*np.sqrt(dist)
+        storage_score[storage_i] = score
+    #在排序分數
+    storage_score_list = sorted(storage_score.items(),key=lambda item:item[1],reverse=False)
+    #比較turnover 來決定放的區間
+    container_db = db["Containers"]
+    container_turnover = container_db.find_one({"container_id":container_id})["turnover"]
+    arm_turnover = redis_dict_get_turnover(arm_id)
+    avg_turnover = arm_turnover/(total_storage - len(empty_grid))
+    quarter_turnover = avg_turnover/2
+    at_range = container_turnover//quarter_turnover
+    if at_range > 3:
+        at_range = 3
+    #判斷空位是否大於1,須保留一個buffer才可塞入新的container
+    if len(empty_grid)>1:
+        #隨機選擇storage_id
+        sid = random.choice(storage_score_list[0:int(len(empty_grid)/4*(at_range+1))])[0]
+        if det_lower(sid):
+            return(sid)
+        else:
+            sid_lower_tmp = json.loads(sid.replace('(', '[').replace(')', ']'))
+            sid_lower = str((sid_lower_tmp[0],(0,sid_lower_tmp[1][1],sid_lower_tmp[1][2])))
+            if sid_lower in empty_grid:
+                return(sid_lower)
+            else:
+                return(sid)
+    else:
+        return("")
+
 
 def find_empty_arms_sid(arm_id):
     '''
@@ -1304,7 +1375,8 @@ def container_movement():
     client = pymongo.MongoClient(uri)
     db = client['ASRS-Cluster-0']
     container_db = db["Containers"]
-    return container_db.count_documents({"$or":[{"status":"on_conveyor"},{"status":"in_workstation"},{"status":"waiting"}]})
+    return container_db.count_documents({"$or":[{"status":"ws_to_conveyor"},{"status":"conveyor_to_ws"},
+                                                {"status":"in_workstation"},{"status":"waiting"}]})
 
 def container_goto(container_id,storage_id):
     '''
@@ -1418,7 +1490,7 @@ def container_exception():
     for container_info in container_candidates:
         container_id = container_info["container_id"]
         status = container_info["status"]
-        #status : waiting , in_workstation , on_conveyor
+        #status : waiting , in_workstation , ws_to_conveyor , conveyor_to_ws
         if status == "waiting":
             #status 為 waiting
             product_push_container(container_id)
@@ -1449,8 +1521,12 @@ def container_exception():
             redis_dict_work_assign(arm_id)
             release_lock(r, lock_name, lock_id)
             arms_work_transmit.delay(arm_id)
+        elif status == "ws_to_conveyor":
+             #status 為 ws_to_conveyor
+             #至電梯排隊存入
+             print("ws_to_conveyor")
         else:
-            #status 為 on_conveyor
+            #status 為 conveyor_to_ws
             #先到工作站再送回
             workstation_get.delay(container_id)
             #選擇放回去的arm_id
@@ -2067,6 +2143,9 @@ def redis_dict_get_work(key):
         else:
             print("redis_dict_get_work is bad")
         return container_info
+def redis_dict_get_turnover(key):
+    value = redis_dict_get(key)
+    return value["turnover"]
 
 def redis_dict_work_over(key):
     value = redis_dict_get(key)
