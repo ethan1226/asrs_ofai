@@ -443,7 +443,7 @@ def find_empty_arms_sid_by_turnover(arm_id,container_id):
             score = dist + abs(layer - 1)*np.sqrt(dist)
         storage_score[storage_i] = score
     #在排序分數
-    storage_score_list = sorted(storage_score.items(),key=lambda item:item[1],reverse=False)
+    storage_score_list = sorted(storage_score.items(),key=lambda item:item[1],reverse=True)
     #比較turnover 來決定放的區間
     container_db = db["Containers"]
     container_turnover = container_db.find_one({"container_id":container_id})["turnover"]
