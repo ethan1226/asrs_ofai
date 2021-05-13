@@ -321,7 +321,7 @@ def arms_store(self, container_id,arm_id):
     #找arm_id上的可放入的空格
     print("arms_store container_id: "+str(container_id)+" arm_id: "+str(arm_id))
     arm_id = str(arm_id)
-    storage_id = find_empty_arms_sid_by_turnover(arm_id)
+    storage_id = find_empty_arms_sid_by_turnover(arm_id,container_id)
     if storage_id == "":
         print_string = " in arm store storage_id is empty"
         print_coler(print_string,"g")
