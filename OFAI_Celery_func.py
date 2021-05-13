@@ -321,7 +321,7 @@ def arms_store(self, container_id,arm_id):
     #找arm_id上的可放入的空格
     print("arms_store container_id: "+str(container_id)+" arm_id: "+str(arm_id))
     arm_id = str(arm_id)
-    storage_id = find_empty_arms_sid(arm_id)
+    storage_id = find_empty_arms_sid_by_turnover(arm_id)
     if storage_id == "":
         print_string = " in arm store storage_id is empty"
         print_coler(print_string,"g")
@@ -597,7 +597,14 @@ def arms_pick(self, container_id):
     content = json_data['index']
     container_report_append(container_id, value_name, content)
 
-
+    arm_distance = G.shortest_paths(source = grid_id, target = elevator_grid_id, weights = dists)[0]
+    arm_moving_time = arm_distance[0] / arm_speed / acc_rate
+    waiting_time = arm_moving_time
+    print("手臂" + str(arm_id)+" "+ str(waiting_time) + " 秒後將container_id: "+ container_id +"移至揀貨平台上")
+    start_time = datetime.datetime.now()
+    result = waiting_func(arm_moving_time, start_time)
+    while not result[0]:
+        result = waiting_func(arm_moving_time, start_time)
 # =============================================================================
 #     elevator_moving_time = float(container_height) / elevator_speed / acc_rate
 #     arm_distance = G.shortest_paths(source = grid_id, target = elevator_grid_id, weights = dists)[0]
@@ -911,7 +918,7 @@ def workstation_operate(self, container_id, elevator_number):
     else:
         print_string = "workstation_operate release _pid lock fail" + arms_data_lock
         print_coler(print_string,"g")
-    return True
+    
     
     start_time = datetime.datetime.now()
     waiting_time = 10 / acc_rate
