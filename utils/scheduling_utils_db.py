@@ -662,17 +662,18 @@ def arms_arrange(arm_id):
     db = client['ASRS-Cluster-0']
     storage_db = db["Storages"]
     container_db = db["Containers"]
-    st = storage_db.find({"arm_id":arm_id})
+    storage_in_arms = storage_db.find({"arm_id":arm_id})
     #此 arm_id 內 storage 資訊
     storage_arm = {}
     #排序 container 的 turnover 使用
     container_turnover = []
     #統計 container 數量
     container_num = 0
-    for si in st:
-        storage_id = si["storage_id"]
+    print("in arms_arrange arm_id: "+str(arm_id)+" 整理storage in arm的 資訊 ")
+    for sia_info in storage_in_arms:
+        storage_id = sia_info["storage_id"]
         storage_id_eval = eval(storage_id)
-        storage_arm[storage_id] = si
+        storage_arm[storage_id] = sia_info
         grid_id = storage_id_eval[0]
         storage_arm[storage_id]["grid_id"] = grid_id
         coordinates = nodes[grid_id]['coordinates']
@@ -694,6 +695,7 @@ def arms_arrange(arm_id):
     grid_list = list(np.unique(grid_list))
     
     #照位置排序 先排內層在排外層 依序由門口近到遠
+    print("in arms_arrange arm_id: "+str(arm_id)+" 將grid排順序依序由門口近到遠")
     storage_location = []
     for layer in range(1,-1,-1):
         for n in range(int(len(grid_list)/2)):
@@ -710,28 +712,34 @@ def arms_arrange(arm_id):
     upper_container = []
     #下層位置擺放的container
     lower_container = []
+    print("in arms_arrange arm_id: "+str(arm_id)+" 將依照container turnover擺放")
     for container in container_turnover_sort[0:total_row*2]:
         upper_container.append(container[0])
     for container in container_turnover_sort[total_row*2:]:
         lower_container.append(container[0])
     #整理後順序 先放下層在放上層
     arrange_location = []
+    print("in arms_arrange arm_id: "+str(arm_id)+" 整理順序設定")
     for n in range(len(upper_container)):
         arrange_location.append([storage_location[n],upper_container[n]])
     for n in range(len(lower_container)):
         arrange_location.append([storage_location[n+int(len(storage_location)/2)],lower_container[n]])
-    print("arm_id: "+arm_id+" 開始整理")
+    print("in arms_arrange arm_id: "+str(arm_id)+" 整理開始")
     while len(arrange_location)>0:
         arrange_info = arrange_location.pop()
         storage_id = arrange_info[0]
         container_id = arrange_info[1]
-        print("剩餘待整理數量為: "+str(len(arrange_location))+" 準備整理 contianer id: "+str(container_id)+" 放入 storage_id: "+str(storage_id))
+        print("in arms_arrange arm_id: "+str(arm_id)+" 剩餘待整理數量為: "+str(len(arrange_location))+
+              " 準備整理 contianer id: "+str(container_id)+" 放入 storage_id: "+str(storage_id))
         if storage_db.find_one({"storage_id":storage_id})["container_id"] != container_id:
-            print("準備清空 storage_id: "+str(storage_id))
+            print("in arms_arrange arm_id: "+str(arm_id)+" 準備清空 storage_id: "+str(storage_id))
             storage_empty(storage_id)
-            print("已清空 storage_id: "+str(storage_id))
-            print("將 container_id: "+str(container_id)+" 放入 storage_id: "+str(storage_id))
-            container_goto(container_id,storage_id)    
+            print("in arms_arrange arm_id: "+str(arm_id)+" 已清空 storage_id: "+str(storage_id))
+            print("in arms_arrange arm_id: "+str(arm_id)+" 將 container_id: "+str(container_id)+" 放入 storage_id: "+str(storage_id))
+            container_goto(container_id,storage_id)
+        print("in arms_arrange arm_id: "+str(arm_id)+" 完成storage_id: "+str(storage_id)+" 放入container_id: "+str(container_id))
+            
+    print("in arms_arrange arm_id: "+str(arm_id)+" 整理結束")
 
 def elevator_workloads(arm_id):
     '''
@@ -877,6 +885,7 @@ def storage_empty(storage_id,ban = []):
     '''
     將目標storage_id 位置清空 清除container不放入ban位置中
     '''
+    print("in storage_empty storage_id: "+str(storage_id)+" will be empty")
     ##redis get
     G = redis_dict_get("G")
     nodes = redis_dict_get("nodes")
@@ -1038,10 +1047,10 @@ def storage_empty(storage_id,ban = []):
                 #將upper_container 移到 moveto 修改資料庫
                 container_moveto(container_id,moveto_storage_id)
                 storage_interchange(storage_id,moveto_storage_id)
-                print("storage_id: "+storage_id+" is empty")
+        print("in storage_empty storage_id: "+storage_id+" is empty")
     else:
         #若無container_id表示已清空
-        print("storage_id: "+storage_id+" is empty")
+        print("in storage_empty storage_id: "+storage_id+" is empty")
 
 '''container function'''
 
@@ -1383,6 +1392,7 @@ def container_goto(container_id,storage_id):
     將 container_id 移至 storage_id ,storage_id是已清空的狀態
     會判斷準備移動container位置可能會移動上方物品至最近的位置，但會避開目標storage_id的位置
     '''
+    print("in container_goto container_id: "+str(container_id)+" will goto storage_id: "+str(storage_id))
     ##redis get
     G = redis_dict_get("G")
     nodes = redis_dict_get("nodes")
@@ -1468,6 +1478,7 @@ def container_goto(container_id,storage_id):
             #將container_id移至 storage_id
             container_moveto(container_id,storage_id)
             storage_interchange(ctr_storage_id,storage_id)
+    print("in container_goto container_id: "+str(container_id)+" is in storage_id: "+str(storage_id))
 
 def container_exception():
     '''
