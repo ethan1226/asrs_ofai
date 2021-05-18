@@ -1531,20 +1531,98 @@ def workstation_pick(container_id):
     print(" workstation_id: "+workstation_id+" order_id: "+str(output_order_id_list))
     return str(output_order_id_list),workstation_id
 
+
 @OFAI_Celery_func.task(bind=True, soft_time_limit= 172800, time_limit= 172800)
-def add_a(self):
-    for i in range(100000000):
-        pass
-    print("a")
+def arms_arrange(self,arm_id):
+    '''
+    arm_id 上的container重新排序
+    '''
     
-@OFAI_Celery_func.task(bind=True, soft_time_limit= 172800, time_limit= 172800)
-def add_b(self):
-    print("b")
+    G = redis_dict_get("G")
+    nodes = redis_dict_get("nodes")
+    dists = redis_dict_get("dists")
+    with open('參數檔.txt') as f:
+        json_data = json.load(f)
+    uri = json_data["uri"]    
+    client = pymongo.MongoClient(uri)
+    db = client['ASRS-Cluster-0']
+    storage_db = db["Storages"]
+    container_db = db["Containers"]
+    storage_in_arms = storage_db.find({"arm_id":arm_id})
+    #此 arm_id 內 storage 資訊
+    storage_arm = {}
+    #排序 container 的 turnover 使用
+    container_turnover = []
+    #統計 container 數量
+    container_num = 0
+    print("in arms_arrange arm_id: "+str(arm_id)+" 整理storage in arm的 資訊 ")
+    for sia_info in storage_in_arms:
+        storage_id = sia_info["storage_id"]
+        storage_id_eval = eval(storage_id)
+        storage_arm[storage_id] = sia_info
+        grid_id = storage_id_eval[0]
+        storage_arm[storage_id]["grid_id"] = grid_id
+        coordinates = nodes[grid_id]['coordinates']
+        storage_arm[storage_id]["coordinates"] = {"x":coordinates[0],"y":coordinates[1],"z":coordinates[2]}
+        if storage_arm[storage_id]["container_id"] == "":
+            storage_arm[storage_id]["turnover"] = 0
+        else:
+            container_id = storage_arm[storage_id]["container_id"]
+            storage_arm[storage_id]["turnover"] = container_db.find_one({"container_id":container_id})["turnover"]
+            container_turnover.append([container_id,storage_arm[storage_id]["turnover"]])
+            container_num += 1
+    #arm_id上所有的 grid
+    grid_list = []
+    storage_id_list = []
+    for k,v in storage_arm.items():
+        k_eval = eval(k)
+        grid_list.append(k_eval[0])
+        storage_id_list.append(k)
+    grid_list = list(np.unique(grid_list))
     
-@OFAI_Celery_func.task(bind=True, soft_time_limit= 172800, time_limit= 172800)
-def add_c(self):
-    print("c")
+    #照位置排序 先排內層在排外層 依序由門口近到遠
+    print("in arms_arrange arm_id: "+str(arm_id)+" 將grid排順序依序由門口近到遠")
+    storage_location = []
+    for layer in range(1,-1,-1):
+        for n in range(int(len(grid_list)/2)):
+            for i in range(4):
+                storage_location.append(str((grid_list[n],(layer,i,0))))
+                storage_location.append(str((grid_list[n+int(len(grid_list)/2)],(layer,i,0))))
     
-@OFAI_Celery_func.task(bind=True, soft_time_limit= 172800, time_limit= 172800)
-def add_d(self):
-    print("d")
+    #排序 container 的 turnover
+    container_turnover_sort = sorted(container_turnover, key=lambda s: s[1],reverse = True)
+    
+    #將排序老的container放入 先放前兩個的 1/4 在內層 再放剩餘的在外層 保證外層比內層多 
+    total_row = len(container_turnover_sort)//4
+    #上層位置擺放的container
+    upper_container = []
+    #下層位置擺放的container
+    lower_container = []
+    print("in arms_arrange arm_id: "+str(arm_id)+" 將依照container turnover擺放")
+    for container in container_turnover_sort[0:total_row*2]:
+        upper_container.append(container[0])
+    for container in container_turnover_sort[total_row*2:]:
+        lower_container.append(container[0])
+    #整理後順序 先放下層在放上層
+    arrange_location = []
+    print("in arms_arrange arm_id: "+str(arm_id)+" 整理順序設定")
+    for n in range(len(upper_container)):
+        arrange_location.append([storage_location[n],upper_container[n]])
+    for n in range(len(lower_container)):
+        arrange_location.append([storage_location[n+int(len(storage_location)/2)],lower_container[n]])
+    print("in arms_arrange arm_id: "+str(arm_id)+" 整理開始")
+    while len(arrange_location)>0:
+        arrange_info = arrange_location.pop()
+        storage_id = arrange_info[0]
+        container_id = arrange_info[1]
+        print("in arms_arrange arm_id: "+str(arm_id)+" 剩餘待整理數量為: "+str(len(arrange_location))+
+              " 準備整理 contianer id: "+str(container_id)+" 放入 storage_id: "+str(storage_id))
+        if storage_db.find_one({"storage_id":storage_id})["container_id"] != container_id:
+            print("in arms_arrange arm_id: "+str(arm_id)+" 準備清空 storage_id: "+str(storage_id))
+            storage_empty(storage_id)
+            print("in arms_arrange arm_id: "+str(arm_id)+" 已清空 storage_id: "+str(storage_id))
+            print("in arms_arrange arm_id: "+str(arm_id)+" 將 container_id: "+str(container_id)+" 放入 storage_id: "+str(storage_id))
+            container_goto(container_id,storage_id)
+        print("in arms_arrange arm_id: "+str(arm_id)+" 完成storage_id: "+str(storage_id)+" 放入container_id: "+str(container_id))
+            
+    print("in arms_arrange arm_id: "+str(arm_id)+" 整理結束")
