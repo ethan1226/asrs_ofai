@@ -24,7 +24,7 @@ client = pymongo.MongoClient(uri)
 db = client['ASRS-Cluster-0']
 storage_db = db["Storages"]
 
-file = "workreport/workreport_20210507_1ws_acc1.xlsx"
+file = "workreport/workreport_20210517_3ws_acc1.xlsx"
 ofai_workreport = pd.read_excel(file , dtype=str,engine='openpyxl')
 order_list = list(np.unique(pd.Series(ofai_workreport['訂單ID'])))
 
