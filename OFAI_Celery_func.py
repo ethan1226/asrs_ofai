@@ -569,7 +569,7 @@ def arms_pick(self, container_id):
             major_list = G.shortest_paths(source = grid_id, target = [s[0] for s in spot_candidates], weights = dists)[0]
             #選擇距離最短的位置當作移動目標
             moveto = spot_candidates[major_list.index(min(major_list))]
-            moveto = str((moveto[0],tuple(moveto[1])))
+            moveto_storage_id = str((moveto[0],tuple(moveto[1])))
             #判斷空位是上層還是下層
             if moveto[1][0] == 1:
                 #空位在上層，判斷下層是否有東西
@@ -581,9 +581,19 @@ def arms_pick(self, container_id):
                     #空位下層有東西，放入下層
                     moveto[1][0] = 0
                     moveto_storage_id = str((moveto[0],tuple(moveto[1])))
+            print(moveto[0])
+            arm_distance = G.shortest_paths(source = grid_id, target = int(moveto[0]), weights = dists)[0]
+            arm_moving_time = arm_distance[0] / arm_speed / acc_rate
+            waiting_time = arm_moving_time * 2 #來回兩趟
+            print("手臂" + str(arm_id)+" "+ str(waiting_time) + " 秒後將container前面障礙移至領一個儲格")
+            start_time = datetime.datetime.now()
+            result = waiting_func(arm_moving_time, start_time)
+            while not result[0]:
+                result = waiting_func(arm_moving_time, start_time)
+            
             #將upper_container 移到 moveto 修改資料庫
-            container_moveto(upper_container,moveto)
-            storage_interchange(upper_storage_id,moveto)
+            container_moveto(upper_container,moveto_storage_id)
+            storage_interchange(upper_storage_id,moveto_storage_id)
             #再將 container_id放到conveyor
             container_set_status(container_id,'conveyor_to_ws')
             container_grid(container_id,-1)
@@ -848,7 +858,12 @@ def workstation_operate(self, container_id, elevator_number):
     low_priority = json_data['low_priority']
     medium_priority = json_data['medium_priority']
     high_priority = json_data['high_priority']
+    uri = json_data["uri"]
+
     conveyor_speed = json_data['conveyor_speed']
+    client = pymongo.MongoClient(uri)
+    db = client['ASRS-Cluster-0']
+    workstation_db = db["Workstations"]
     #計算運輸時間
     transport_time = (int(elevator_number) * 2 + conveyor_speed) / acc_rate
     #模擬運輸時間
@@ -874,6 +889,26 @@ def workstation_operate(self, container_id, elevator_number):
     content = datetime.datetime.now()
     container_report_append(container_id, value_name, content)
     
+    '''
+    取工作站鎖
+    '''
+    work_info = workstation_db.aggregate([
+                         {'$addFields': {"workTransformed": {'$objectToArray': "$work"}}},
+                         {'$match': { 'workTransformed.v.container.'+container_id: {'$exists':1} }}
+                                     ])
+    ws_work = ""
+    for w_1 in work_info:
+        # print("in workstation_pick contaioner_id : ",container_id," w_1: ",w_1)
+        ws_work = w_1['work']
+        workstation_id = w_1['workstation_id']
+    workstation_lock = workstation_id+ "_pick_lock"
+    workstation_lock_val = 1
+    while workstation_lock_val:
+        workstation_lock_id = acquire_lock_with_timeout(r, workstation_lock, acquire_timeout= 2, lock_timeout= 172800)
+        print("workstation_operate: waiting lock release " + workstation_lock)
+        if workstation_lock_id != False:
+            workstation_lock_val = 0
+    print("workstation_operate get workstation_lock key " + workstation_lock + " " + workstation_lock_id)
     #工作站撿取container_id需求內容物
     order_id_list_str, workstation_id = workstation_pick(container_id)
     order_id_list = eval(order_id_list_str)
@@ -920,26 +955,16 @@ def workstation_operate(self, container_id, elevator_number):
         print_coler(print_string,"g")
     
     
+    '''
+    釋放工作站鎖    
+    '''
+    result = release_lock(r, workstation_lock, workstation_lock_id)
+    if result:
+        print("workstation_operate release workstation_lock " + workstation_lock +" finished")
+    else:
+        print_string = "workstation_operate release workstation_lock fail" + workstation_lock
+        print_coler(print_string,"g")
     start_time = datetime.datetime.now()
-    waiting_time = 10 / acc_rate
-    result = waiting_func(waiting_time, start_time)
-    while not result[0]:
-        result = waiting_func(waiting_time, start_time)
-        #r.set(elevator_lock_name + "_task", result[1])
-# =============================================================================
-#     oi = get_time_string()
-#     value = (0,oi,0,container_id)
-#     lock_name = arm_id+ "_pid"
-#     lock_val = 1
-#     while lock_val:
-#         lock_id = acquire_lock_with_timeout(r, lock_name, acquire_timeout= 2, lock_timeout= 100)
-#         print("workstation_operate: waiting lock release " + lock_name)
-#         if lock_id != False:
-#             lock_val = 0
-#     redis_data_update_db(arm_id,value)
-#     release_lock(r, lock_name, lock_id)
-#     arms_work_transmit.delay(arm_id)
-# =============================================================================
     
     #將 container 送回輸送帶上，從工作站返回倉庫
     container_set_status(container_id,'ws_to_conveyor')
