@@ -24,7 +24,7 @@ client = pymongo.MongoClient(uri)
 db = client['ASRS-Cluster-0']
 storage_db = db["Storages"]
 
-file = "workreport/workreport_20210517_3ws_acc1.xlsx"
+file = "workreport/workreport_20210530_3ws_acc50_3.xlsx"
 ofai_workreport = pd.read_excel(file , dtype=str,engine='openpyxl')
 order_list = list(np.unique(pd.Series(ofai_workreport['訂單ID'])))
 
@@ -79,6 +79,7 @@ for oi in range(len(ofai_workreport)):
                                                                       "out_ws_time":out_ws_time,
                                                                       "in_storage_time":end_time}
         
+print("日期: "+ str(order_info['日期']))
 print("共 "+str(len(order_dict))+" 訂單")
 print("共從倉庫出貨 "+str(container_num)+" 箱container")
 #所有訂單花費時間
