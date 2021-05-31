@@ -29,7 +29,7 @@ order_dict = {}
 for oi in range(len(yahoo_order_record)):
     order_info = yahoo_order_record.iloc[oi,:]
     print("日期",order_info['日期'],"批次",order_info['批次'],"訂單",order_info['訂單'],"品號",order_info['品號'],"出庫開始時間",order_info['出庫開始時間'],"出庫結束時間",order_info['出庫結束時間'])
-    if order_info['出庫結束時間'] is not np.nan and order_info['出庫開始時間'] is not np.nan:
+    if order_info['出庫結束時間'] is not np.nan and order_info['出庫開始時間'] is not np.nan and order_info['入庫結束時間'] is not np.nan:
         #若有出庫時間資料
         if order_info['日期'] in order_dict:
             if order_info['批次'] in order_dict[order_info['日期']]["works"]:
