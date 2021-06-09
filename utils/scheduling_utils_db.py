@@ -1112,7 +1112,7 @@ def container_armid(container_id):
     arm_id = ""
     for container_storage_info in storage_db.find({'container_id':container_id}):
         arm_id = str(container_storage_info['arm_id'])
-    print("in container_armid container_id: "+container_id+" arm_id: "+arm_id)
+    # print("in container_armid container_id: "+container_id+" arm_id: "+arm_id)
     return arm_id
     
 
@@ -2218,6 +2218,122 @@ def print_coler(string,color):
         print("\033[1;34m"+string+"\033[0m")
     else:
         print("\033[30m"+string+"\033[0m")
-        
+
+def replenish_need_count():
+    '''
+    計算需 replenish 的商品數
+    '''
+    with open('參數檔.txt') as f:
+            json_data = json.load(f)
+    uri = json_data["uri"]
+    client = pymongo.MongoClient(uri)
+    db = client['ASRS-Cluster-0']
+    product_db = db["Products"]
+    need = product_db.find({"$and":[{"$where" : "this.quantity < this.replenish"},{"status":"normal"}] })
+    return need.count()
+
+def replenish_assign(num):
+    '''
+    分配 replenish 的商品
+    '''
+    with open('參數檔.txt') as f:
+            json_data = json.load(f)
+    uri = json_data["uri"]
+    client = pymongo.MongoClient(uri)
+    db = client['ASRS-Cluster-0']
+    product_db = db["Products"]
     
+    need_replenish_product_candidates = {}
+    for pi in product_db.find({"$and":[{"$where" : "this.quantity < this.replenish"},{"status":"normal"}] }):
+        need_replenish_product_candidates[pi["product_id"]] = pi["replenish"] - pi["quantity"]
     
+    need_replenish_product_score_list = sorted(need_replenish_product_candidates.items(),key=lambda item:item[1],reverse=True)
+    output = []
+    for replenish_product in need_replenish_product_score_list:
+        if num<=0:
+            break
+        else:
+            product_id = replenish_product[0]
+            myquery = { "product_id": product_id }
+            newvalues = { "$set": { "status": "replenishing"}}
+            product_db.update(myquery,newvalues)
+            output.append(product_id)
+            num -= 1
+    if num >0:
+        print_string = "只有 "+str(20 - num)+ " 需要補貨"
+        print_coler(print_string,"g")
+    return output
+    
+def replenish_id_get(a):
+    '''
+    給予時間係數
+    '''
+    now = time.localtime()
+    output = "r"+str(now[0]) + str(now[1]).zfill(2) + str(now[2]).zfill(2) + \
+            str(now[3]).zfill(2) + str(now[4]).zfill(2) + str(now[5]).zfill(2) + str(a).zfill(2) + "-1"
+    return output
+
+def workstation_new_replenish(workstation_id,product_list):
+    '''
+    新replenish工作產生
+    '''
+    with open('參數檔.txt') as f:
+        json_data = json.load(f)
+    uri = json_data["uri"]
+    client = pymongo.MongoClient(uri)
+    db = client['ASRS-Cluster-0']
+    workstation_db = db["Workstations"]
+    product_db = db["Products"]
+    replenish_product_dict ={}
+    for pi in product_db.find({"product_id":{"$in":product_list}}):
+        replenish_product_dict[pi["product_id"]] = pi
+    ws = workstation_db.find({'workstation_id':workstation_id})
+    for ws_i in ws:
+        ws_workstation_id = ws_i['workstation_id']
+        ws_work = ws_i['work']
+        ws_workloads = ws_i['workloads']
+    num = 0
+    replenish_id_list = []
+    replenish_dict = {}
+    #依據商品補至replenish的1.3倍
+    for product_id in product_list:
+        replenish_dict[replenish_id_get(num)] = {"product_id":product_id,
+                                                 "qt":int(replenish_product_dict[product_id]["replenish"]*1.3 - replenish_product_dict[product_id]["quantity"]) }
+        num += 1
+    replenish_work = {}
+    for replenish_id,replenish_info in replenish_dict.items():
+        replenish_work[replenish_id] = {}
+        replenish_work[replenish_id]["prd"] = {}
+        replenish_work[replenish_id]["prd"][replenish_info["product_id"]] = {"qt" : replenish_info["qt"]}
+        replenish_work[replenish_id]["container"] = {}
+        ws_work.update(replenish_work)
+        ws_workloads += 1
+    myquery = { "workstation_id": workstation_id }
+    newvalues = { "$set": { "work": ws_work,"workloads":ws_workloads}}
+    workstation_db.update(myquery,newvalues)
+    
+
+    
+def workstation_add_replenish(replenish_id,container_id,prd,pqt):
+    '''
+    指派order 撿取container的contents與數量
+    '''
+    with open('參數檔.txt') as f:
+        json_data = json.load(f)
+    uri = json_data["uri"]
+    client = pymongo.MongoClient(uri)
+    db = client['ASRS-Cluster-0']
+    workstation_db = db["Workstations"]
+    work_info = workstation_db.aggregate([
+                     {'$match': { 'work.'+replenish_id:{'$exists':"true"}}}])
+    for ws_i in work_info:
+        workstation_id = ws_i["workstation_id"]
+        ws_work = ws_i['work']
+    insert_pick = {}
+    insert_pick[container_id] = {prd:pqt}
+    ws_work[replenish_id]["container"].update(insert_pick)
+    myquery = { "workstation_id": workstation_id }
+    newvalues = { "$set": { "work."+replenish_id+".container."+container_id+"."+prd:pqt}}
+    workstation_db.update(myquery,newvalues)
+    
+

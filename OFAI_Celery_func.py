@@ -71,7 +71,7 @@ def order_pick(self, workstation_id):
     
     while len(prd_list)>0:
         pid = prd_list[0]
-        print("workstation id: "+str(workstation_id)+" 剩餘訂單商品數量: "+str(len(prd_list))+" 準備撿取pid: "+str(pid))
+        print("Order picking workstation id: "+str(workstation_id)+" 剩餘訂單商品數量: "+str(len(prd_list))+" 準備撿取pid: "+str(pid))
         oi = get_time_string()
         numbering = 0
         isbreak = False
@@ -217,7 +217,7 @@ def order_pick(self, workstation_id):
 
 
 @OFAI_Celery_func.task(bind=True, soft_time_limit= 172800, time_limit= 172800)
-def workstation_open(self, workstation_id,index_label,index,num):
+def workstation_open(self, workstation_id,index_label,index,num,work_type):
     r = redis.Redis(host='localhost', port=6379, decode_responses=False)
     r.set("celery-task-meta-" + self.request.id, self.request.id)
     lock_name = "order_assignment"
@@ -226,52 +226,114 @@ def workstation_open(self, workstation_id,index_label,index,num):
     low_priority = json_data['low_priority']
     medium_priority = json_data['medium_priority']
     high_priority = json_data['high_priority']
-    if r.exists(workstation_id+"open") == 0:
-        r.set(workstation_id+"open","")
-        #此訂單池還有訂單
-        if order_processing_count(index_label,index)>0:
-            print("訂單池還有訂單")
-            #工作站是否還有工作
-            if workstation_free(workstation_id):
-                print("工作站id: "+str(workstation_id)+" 沒有訂單")
-                #取得訂單池ＤＢ鑰匙
-                order_lock = acquire_lock_with_timeout(r,lock_name, acquire_timeout=3, lock_timeout=172800)
-                #取得失敗
-                if order_lock != False:
-                    #分配訂單 
-                    if container_movement()<30:
-                        #箱子移動數少依時間配單
-                        order_l = str(order_assign(index_label,index,num))
-                        print("目前 container 移動正常 使用common order assign ")
-                    else:
-                        #若目前箱子正在移動的數量太多會先分配商品在同一箱的訂單ｓ
-                        order_l = str(order_assign_crunch(index_label,index,num))
-                        print("目前 container 移動擁擠 使用crunch order assign ")
-                    print("分配訂單為："+order_l)
-                    print("訂單池給予訂單數為: "+str(len(eval(order_l))))
-                    order_l_eval = eval(order_l)
-                    #釋放訂單池ＤＢ
-                    release_lock(r, lock_name, order_lock)
-                    workstation_newwork_prd(workstation_id,order_l_eval)
-                    print("工作站id: "+str(workstation_id)+" 撿取訂單項目輸入完成")
+    uri = json_data["uri"]
+    client = pymongo.MongoClient(uri)
+    db = client['ASRS-Cluster-0']
+    workstation_db = db["Workstations"]
+
+    if work_type == "pick":
+        myquery = { "workstation_id": workstation_id }
+        newvalues = { "$set": { "type":"pick"}}
+        workstation_db.update(myquery,newvalues)
+        print("workstation_id : "+str(workstation_id)+" is picking work")
+        if r.exists(workstation_id+"open") == 0:
+            r.set(workstation_id+"open","")
+            #此訂單池還有訂單
+            if order_processing_count(index_label,index)>0:
+                print("訂單池還有訂單")
+                #工作站是否還有工作
+                if workstation_free(workstation_id):
+                    print("工作站id: "+str(workstation_id)+" 沒有訂單")
+                    #取得訂單池ＤＢ鑰匙
+                    order_lock = acquire_lock_with_timeout(r,lock_name, acquire_timeout=3, lock_timeout=172800)
+                    #取得失敗
+                    if order_lock != False:
+                        #分配訂單 
+                        if container_movement()<30:
+                            #箱子移動數少依時間配單
+                            order_l = str(order_assign(index_label,index,num))
+                            print("目前 container 移動正常 使用common order assign ")
+                        else:
+                            #若目前箱子正在移動的數量太多會先分配商品在同一箱的訂單ｓ
+                            order_l = str(order_assign_crunch(index_label,index,num))
+                            print("目前 container 移動擁擠 使用crunch order assign ")
+                        print("分配訂單為："+order_l)
+                        print("訂單池給予訂單數為: "+str(len(eval(order_l))))
+                        order_l_eval = eval(order_l)
+                        #釋放訂單池ＤＢ
+                        release_lock(r, lock_name, order_lock)
+                        workstation_newwork_prd(workstation_id,order_l_eval)
+                        print("工作站id: "+str(workstation_id)+" 撿取訂單項目輸入完成")
+                        print("工作站id: "+str(workstation_id)+" 撿取開始")
+                        #訂單商品選取撿出container號
+                        order_pick.apply_async(args=[workstation_id], priority = low_priority)
+                        #workstation_open.delay(workstation_id,index_label,index,num)
+                else:
+                    print("工作站id: "+str(workstation_id)+" 還有訂單")
+                    # order_l = workstation_order(workstation_id)
                     print("工作站id: "+str(workstation_id)+" 撿取開始")
-                    #訂單商品選取撿出container號
                     order_pick.apply_async(args=[workstation_id], priority = low_priority)
                     #workstation_open.delay(workstation_id,index_label,index,num)
             else:
-                print("工作站id: "+str(workstation_id)+" 還有訂單")
-                # order_l = workstation_order(workstation_id)
-                print("工作站id: "+str(workstation_id)+" 撿取開始")
-                order_pick.apply_async(args=[workstation_id], priority = low_priority)
-                #workstation_open.delay(workstation_id,index_label,index,num)
+                print("訂單池沒有訂單")
+                myquery = { "workstation_id": workstation_id }
+                newvalues = { "$set": { "type":"free"}}
+                workstation_db.update(myquery,newvalues)
+                r.delete(workstation_id+"open")
         else:
-            print("訂單池沒有訂單")
-            r.delete(workstation_id+"open")
+            print("工作站id: "+str(workstation_id)+"調配商品中")
+            if workstation_free(workstation_id):
+                r.delete(workstation_id+"open")
+                print("工作站id: "+str(workstation_id)+" 完成 補新訂單")
+    elif work_type == "replenish":
+        print("workstation_id : "+str(workstation_id)+" is replenishing work")
+        myquery = { "workstation_id": workstation_id }
+        newvalues = { "$set": { "type":"replenish"}}
+        workstation_db.update(myquery,newvalues)
+        if r.exists(workstation_id+"open") == 0:
+            r.set(workstation_id+"open","")
+            #此訂單池還有訂單
+            if replenish_need_count() > 0:
+                print("還有商品需進行補貨")
+                #工作站是否還有工作
+                if workstation_free(workstation_id):
+                    print("工作站id: "+str(workstation_id)+" 沒有補貨單")
+                    #取得訂單池ＤＢ鑰匙
+                    order_lock = acquire_lock_with_timeout(r,lock_name, acquire_timeout=3, lock_timeout=172800)
+                    #取得失敗
+                    if order_lock != False:
+                        #分配補貨單 
+                        replenish_l = str(replenish_assign(num))
+                        print("分配補貨商品為："+replenish_l)
+                        print("需補貨商品數為: "+str(len(eval(replenish_l))))
+                        replenish_l_eval = eval(replenish_l)
+                        #釋放訂單池ＤＢ
+                        release_lock(r, lock_name, order_lock)
+                        workstation_new_replenish(workstation_id,replenish_l_eval)
+                        print("工作站id: "+str(workstation_id)+" 補貨項目輸入完成")
+                        print("工作站id: "+str(workstation_id)+" 補貨開始")
+                        #訂單商品選取撿出container號
+                        replenish_pick.apply_async(args=[workstation_id], priority = low_priority)
+                        #workstation_open.delay(workstation_id,index_label,index,num)
+                else:
+                    print("工作站id: "+str(workstation_id)+" 還有商品需補貨" )
+                    # order_l = workstation_order(workstation_id)
+                    print("工作站id: "+str(workstation_id)+" 補貨開始")
+                    replenish_pick.apply_async(args=[workstation_id], priority = low_priority)
+                    #workstation_open.delay(workstation_id,index_label,index,num)
+            else:
+                print("沒有商品需補貨")
+                r.delete(workstation_id+"open")
+                myquery = { "workstation_id": workstation_id }
+                newvalues = { "$set": { "type":"free"}}
+                workstation_db.update(myquery,newvalues)
+        else:
+            print("工作站id: "+str(workstation_id)+"商品補貨中")
+            if workstation_free(workstation_id):
+                r.delete(workstation_id+"open")
+                print("工作站id: "+str(workstation_id)+" 完成 補新商品並進行補貨")
     else:
-        print("工作站id: "+str(workstation_id)+"調配商品中")
-        if workstation_free(workstation_id):
-            r.delete(workstation_id+"open")
-            print("工作站id: "+str(workstation_id)+" 完成 補新訂單")
+        print("undefine work type")
         # workstation_open.delay(workstation_id,index_label,index,num)
 '''
 workstation_tasks
@@ -836,7 +898,7 @@ def workstation_workend(self, workstation_id,order_id):
                 index_label = json_data["index_label"]
                 index = json_data["index"]
                 num = json_data["num"]
-                workstation_open.apply_async(args = [workstation_id,index_label,index,num], priority = low_priority)
+                workstation_open.apply_async(args = [workstation_id,index_label,index,num,"pick"], priority = low_priority)
         else:
             print_string = "workstation_id: "+str(workstation_id)+" no order id: "+str(order_id)
             print_coler(print_string,"g")
@@ -901,32 +963,69 @@ def workstation_operate(self, container_id, elevator_number):
         # print("in workstation_pick contaioner_id : ",container_id," w_1: ",w_1)
         ws_work = w_1['work']
         workstation_id = w_1['workstation_id']
-    workstation_lock = workstation_id+ "_pick_lock"
-    workstation_lock_val = 1
-    while workstation_lock_val:
-        workstation_lock_id = acquire_lock_with_timeout(r, workstation_lock, acquire_timeout= 2, lock_timeout= 172800)
-        print("workstation_operate: waiting lock release " + workstation_lock)
-        if workstation_lock_id != False:
-            workstation_lock_val = 0
-    print("workstation_operate get workstation_lock key " + workstation_lock + " " + workstation_lock_id)
-    #工作站撿取container_id需求內容物
-    order_id_list_str, workstation_id = workstation_pick(container_id)
-    order_id_list = eval(order_id_list_str)
-    #依序判斷order_list內的order_id是否完成
-    for order_id in order_id_list:
-        if order_check(workstation_id, order_id):
-            print("workstation_id: "+str(workstation_id)+" finished order: "+str(order_id))
-            workstation_workend.apply_async(args = [workstation_id, order_id], priority = low_priority)
-    #選擇放回去的arm_id
-    index_putback = 1
-    while index_putback:
-        try:
-            arm_id = container_putback(container_id)
-            index_putback = 0
-        except:
-            print_string = "restart find arm_id to putback container"
-            print_coler(print_string,"g")
-            index_putback = 1
+    #判斷工作站工作項目
+    work_type = workstation_db.find_one({"workstation_id":workstation_id})["type"]
+    print("此工作站id: " + str(workstation_id) + " 工作項目為： "+str(work_type))
+    if work_type == "pick" :
+# =============================================================================
+#         workstation_lock = workstation_id+ "_pick_lock"
+#         workstation_lock_val = 1
+#         while workstation_lock_val and False:
+#             workstation_lock_id = acquire_lock_with_timeout(r, workstation_lock, acquire_timeout= 2, lock_timeout= 172800)
+#             print("workstation_operate: waiting lock release " + workstation_lock)
+#             if workstation_lock_id != False:
+#                 workstation_lock_val = 0
+#         print("workstation_operate get workstation_lock key " + workstation_lock + " " + workstation_lock_id)
+# =============================================================================
+        #工作站撿取container_id需求內容物
+        order_id_list_str, workstation_id = workstation_pick(container_id)
+        order_id_list = eval(order_id_list_str)
+        #依序判斷order_list內的order_id是否完成
+        for order_id in order_id_list:
+            if order_check(workstation_id, order_id):
+                print("workstation_id: "+str(workstation_id)+" finished order: "+str(order_id))
+                workstation_workend.apply_async(args = [workstation_id, order_id], priority = low_priority)
+        #選擇放回去的arm_id
+        index_putback = 1
+        while index_putback:
+            try:
+                arm_id = container_putback(container_id)
+                index_putback = 0
+            except:
+                print_string = "restart find arm_id to putback container"
+                print_coler(print_string,"g")
+                index_putback = 1
+    elif work_type == "replenish" :
+# =============================================================================
+#         workstation_lock = workstation_id+ "_replenish_lock"
+#         workstation_lock_val = 1
+#         while workstation_lock_val and False:
+#             workstation_lock_id = acquire_lock_with_timeout(r, workstation_lock, acquire_timeout= 2, lock_timeout= 172800)
+#             print("workstation_operate: waiting lock release " + workstation_lock)
+#             if workstation_lock_id != False:
+#                 workstation_lock_val = 0
+#         print("workstation_operate get workstation_lock key " + workstation_lock + " " + workstation_lock_id)
+# =============================================================================
+        #工作站撿取container_id需求內容物
+        replenish_id_list_str, workstation_id = workstation_replenish(container_id)
+        replenish_id_list = eval(replenish_id_list_str)
+        #依序判斷order_list內的order_id是否完成
+        for replenish_id in replenish_id_list:
+            if order_check(workstation_id, replenish_id):
+                print("workstation_id: "+str(workstation_id)+" finished  replenish order: "+str(replenish_id))
+                workstation_workend.apply_async(args = [workstation_id, replenish_id], priority = low_priority)
+        #選擇放回去的arm_id
+        index_putback = 1
+        while index_putback:
+            try:
+                arm_id = container_putback(container_id)
+                index_putback = 0
+            except:
+                print_string = "restart find arm_id to putback container"
+                print_coler(print_string,"g")
+                index_putback = 1
+    else:
+        print("workstation_operate fail undefined work type")
     
     '''
     取手臂鎖
@@ -958,12 +1057,14 @@ def workstation_operate(self, container_id, elevator_number):
     '''
     釋放工作站鎖    
     '''
-    result = release_lock(r, workstation_lock, workstation_lock_id)
-    if result:
-        print("workstation_operate release workstation_lock " + workstation_lock +" finished")
-    else:
-        print_string = "workstation_operate release workstation_lock fail" + workstation_lock
-        print_coler(print_string,"g")
+# =============================================================================
+#     result = release_lock(r, workstation_lock, workstation_lock_id)
+#     if result:
+#         print("workstation_operate release workstation_lock " + workstation_lock +" finished")
+#     else:
+#         print_string = "workstation_operate release workstation_lock fail" + workstation_lock
+#         print_coler(print_string,"g")
+# =============================================================================
     start_time = datetime.datetime.now()
     
     #將 container 送回輸送帶上，從工作站返回倉庫
@@ -1446,9 +1547,11 @@ def workreport_append_arm(self):
     print("workreport_append_arm recorded")
     
 def workstation_pick(container_id):
-    #工作站以從container撿取order所需物品
-    #刪除 workstation work內工作 container 資訊
-    #修改container_db內容
+    '''
+    工作站以從container撿取order所需物品
+    刪除 workstation work內工作 container 資訊
+    修改container_db內容
+    '''
     print("in workstation_pick contaioner_id : "+container_id)
     with open('參數檔.txt') as f:
         json_data = json.load(f)
@@ -1651,3 +1754,299 @@ def arms_arrange(self,arm_id):
         print("in arms_arrange arm_id: "+str(arm_id)+" 完成storage_id: "+str(storage_id)+" 放入container_id: "+str(container_id))
             
     print("in arms_arrange arm_id: "+str(arm_id)+" 整理結束")
+
+
+'''補貨'''
+@OFAI_Celery_func.task(bind=True, soft_time_limit= 172800, time_limit= 172800)
+def replenish_pick(self, workstation_id):
+    '''
+    會先收集工作站內補貨單
+    先將補貨單商品先合併商品資訊
+    在找到適當的container放入工作站
+    搜尋方式從redis改成直接搜尋db
+    '''
+    print("workstation id: "+str(workstation_id)+"start replenish_pick")
+    r = redis.Redis(host='localhost', port=6379, decode_responses=False)
+    with open('參數檔.txt') as f:
+        json_data = json.load(f)
+    uri = json_data["uri"]
+    low_priority = json_data['low_priority']
+    medium_priority = json_data['medium_priority']
+    high_priority = json_data['high_priority']
+    client = pymongo.MongoClient(uri)
+    db = client['ASRS-Cluster-0']
+    workstation_db = db["Workstations"]
+    container_db = db["Containers"]
+    ws = workstation_db.find_one({'workstation_id':workstation_id})
+    ws_works = ws["work"]
+    #工作站內的剩餘補貨單與補貨單還未撿取的商品列表
+    replenish_l = []
+    ws_replenish_prd = []
+    for replenish_i,works_value in ws_works.items():
+        replenish_l.append(replenish_i)
+        replenish_unpick = {}
+        for prd,qt in works_value["prd"].items():
+            replenish_unpick[prd] = qt["qt"]
+        ws_replenish_prd.append(replenish_unpick)
+    #排序機器手臂工作量
+    arm_key_list = arm_work_sort_list()
+    #依商品順序處理 內容包含數量與需求訂單
+    prd_list = []
+    prd_content = {}
+    for replenish_index,replenish_content in enumerate(ws_replenish_prd):
+        for prd,pqt in replenish_content.items():
+            if prd not in prd_content:
+                prd_list.append(prd)
+                prd_content[prd] = {"qt":pqt,"order":{replenish_l[replenish_index]:pqt}}
+            else:
+                prd_content[prd]["qt"] += pqt
+                prd_content[prd]["order"].update({replenish_l[replenish_index]:pqt})
+    #開始選擇補貨container並開始補貨
+    while len(prd_list)>0:
+        pid = prd_list[0]
+        print("workstation id: "+str(workstation_id)+" 剩餘補貨商品數量: "+str(len(prd_list))+" 準備補貨pid: "+str(pid))
+        oi = get_time_string()
+        numbering = 0
+        isbreak = False
+        print("Replenishing workstation id: "+str(workstation_id)+" pid: "+pid+" 搜尋 ")
+        #搜尋還有空間(sku < 4)的container 內不含pid
+        container_candidates = container_db.aggregate([{"$match": { "sku":{"$lt":4},
+                                                                    "contents."+pid:{"$not":{"$exists":"true"}},
+                                                                    "status":"in grid"}}])
+        container_candidates_list = []
+        for ci in container_candidates:
+            container_candidates_list.append(ci["container_id"])
+        #隨機選取數量
+        container_candidates_random_num = 10
+        #隨機選取放入containers
+        if container_candidates_random_num <= len(container_candidates_list):
+            container_candidates_random_list = list(np.random.choice(container_candidates_list,replace=False,size=container_candidates_random_num))
+        else:
+            container_candidates_random_list = container_candidates_list
+        #排序找到的container所在的arm workloads
+        layer_container_workloads_list = []
+        for ci in container_candidates_random_list:
+            arm_id = container_armid(ci)
+            if arm_id != "":
+                layer_container_workloads_list.append([ci,arm_id,arm_workloads(arm_id),elevator_workloads(arm_id)])
+            else:
+                # print("error no container in storage container_id is "+str(ci["container_id"]))
+                print_string = "workstation id: "+str(workstation_id)+" Ethansay no container in storage container_id is " +str(ci)
+                print_coler(print_string,"g")
+        layer_container_workloads_list_sort = sorted(layer_container_workloads_list, key=lambda s: s[2])
+        #若有適合的container則進行撿取
+        if layer_container_workloads_list_sort  != []:
+            #依序使用適當的container
+            while len(layer_container_workloads_list_sort) > 0:
+                container_choosed = layer_container_workloads_list_sort[0]
+                layer_container_workloads_list_sort.remove(container_choosed)
+                arm_id = container_choosed[1]
+                container_id = container_choosed[0]
+                #防止container被同時多個工作站選取
+                container_lock_name = container_id + "_pid"
+                container_lock = acquire_lock_with_timeout(r, container_lock_name, acquire_timeout=2, lock_timeout=172800)
+                if container_lock != False:
+                    if container_status(container_id)=='in grid':
+                        #改container_db狀態
+                        container_waiting(container_id)
+                        #release container lock
+                        release_lock(r, container_lock_name, container_lock)
+                        #補貨單商品 pid 需求資訊
+                        pid_order_dict = prd_content[pid]["order"]
+                        print("pid: "+str(pid)+" replenish order: "+str(pid_order_dict))
+                        pid_pick_order_list = []
+                        pick_container = 0
+                        #container可補貨空間
+                        container_replenish_capacity = 10  + random.randint(0, 5)
+                        for replenish_id,pqt in pid_order_dict.items():
+                            if pqt > container_replenish_capacity and pqt > 0:
+                                #若補貨單pid數量大於一次可以補貨的量
+                                #工作站加入補貨商品與數量
+                                workstation_add_replenish(replenish_id,container_id,pid,container_replenish_capacity)
+                                 #刪除補貨單需求商品數量
+                                prd_content[pid]["order"][replenish_id] -= container_replenish_capacity
+                                prd_content[pid]["qt"] -= container_replenish_capacity
+                                pick_container += 1
+                            elif pqt <= container_replenish_capacity and pqt > 0:
+                                #若補貨單pid數量小於一次可以補貨的量
+                                #工作站加入補貨商品與數量
+                                workstation_add_replenish(replenish_id,container_id,pid,container_replenish_capacity)
+                                 #刪除補貨單需求商品數量
+                                prd_content[pid]["order"][replenish_id] -= container_replenish_capacity
+                                prd_content[pid]["qt"] -= container_replenish_capacity
+                                pick_container += 1
+                                #補貨完的補貨單刪除
+                                pid_pick_order_list.append(replenish_id)
+                            else:
+                                #若補貨單pid數量為負的
+                                print_string = "workstation id: "+str(workstation_id)+ "container_id: "+str(container_id)+" pid: "+\
+                                                str(pid)+"not replenish in"
+                                print_coler(print_string,"b")
+                        #將撿出的被訂單刪除
+                        for pop_order in pid_pick_order_list:
+                            print("workstation id: "+str(workstation_id)+" 補貨單號: "+pop_order+" 已完成 pid: "+pid+" 的補貨指派")
+                            prd_content[pid]["order"].pop(pop_order,None)
+                        #若商品已無訂單需求則刪除商品
+                        if prd_content[pid]["order"] == {}:
+                            print("刪除 pid: "+ str(pid))
+                            prd_list.remove(pid)
+                        if pick_container >0:
+                            print("workstation id: "+str(workstation_id)+" this container to putin for "+str(pick_container)+" replenish order")
+                            value = (1,oi,numbering,container_id)
+                            numbering += 1
+                            #更新對應redis
+                            arms_data_lock = arm_id+ "_pid"
+                            lock_val = 1
+                            while lock_val:
+                                lock_id = acquire_lock_with_timeout(r, arms_data_lock, acquire_timeout= 2, lock_timeout= 172800)
+                                print("更新對應redis waiting lock release " + arms_data_lock)
+                                if lock_id != False:
+                                    lock_val = 0
+                            print("order_pick get _pid key " + arms_data_lock + " " + lock_id)
+                            
+                            redis_data_update_db(arm_id,value)
+                            print("in replenish_pick redis_data_update arm_id: "+str(arm_id)+" update value: "+str(value))
+                            redis_dict_work_assign(arm_id)
+                            print("replenish_pick assign arm_id: "+str(arm_id)+" workload +1")
+                            result = release_lock(r, arms_data_lock, lock_id)
+                            if result:
+                                print("replenish_pick release _pid lock" + arms_data_lock)
+                            else:
+                                print_string = "replenish_pick release _pid lock fail" + arms_data_lock
+                                print_coler(print_string,"g")
+                            #有訂單需求才送出工作
+                            print("workstation id: "+str(workstation_id)+" oi: "+str(oi)+" arm_id: "+str(arm_id)+
+                                  " pid: "+str(pid)+" container_id: "+container_id)
+                            arms_work_transmit.apply_async(args = [arm_id], priority = medium_priority)
+                        else:
+                            #container 內沒有訂單需求
+                            container_set_status(container_id,'in grid')
+                            print_string = "container_id: " + str(container_id)+" 內沒有訂單需求狀態改回in grid"
+                            print_coler(print_string,"g")
+                else:
+                    layer_container_workloads_list_sort.insert(4,container_choosed)
+                    release_lock(r, container_lock_name, container_lock)
+                if pid not in prd_list:
+                    print("workstation id: "+str(workstation_id)+" pid: "+str(pid)+" out of prd_list")
+                    isbreak = True
+                    break
+    #補貨商品處理結束
+    print("workstation id: "+str(workstation_id)+" replenish finished wait next task")
+    r.delete(workstation_id+"open")
+
+def workstation_replenish(container_id):
+    '''
+    工作站補貨所需商品進container內
+    刪除 workstation work內工作 container 資訊
+    修改container_db內容
+    '''
+    print("in workstation_replenish contaioner_id : "+container_id)
+    with open('參數檔.txt') as f:
+        json_data = json.load(f)
+    uri = json_data["uri"]
+    low_priority = json_data['low_priority']
+    medium_priority = json_data['medium_priority']
+    high_priority = json_data['high_priority']
+    client = pymongo.MongoClient(uri)
+    db = client['ASRS-Cluster-0']
+    workstation_db = db["Workstations"]
+    container_db = db["Containers"]
+    work_info = workstation_db.aggregate([
+                         {'$addFields': {"workTransformed": {'$objectToArray': "$work"}}},
+                         {'$match': { 'workTransformed.v.container.'+container_id: {'$exists':1} }}
+                                     ])
+    ws_work = ""
+    for w_1 in work_info:
+        # print("in workstation_replenish contaioner_id : ",container_id," w_1: ",w_1)
+        ws_work = w_1['work']
+        workstation_id = w_1['workstation_id']
+        
+    if ws_work == "":
+        print_string = "fail, In workstation_replenish ws_work == None!!!"
+        print_coler(print_string,"b")
+        return True
+    # 找有哪些補貨單有container
+    output_replenish_id_list = []
+    for replenish_id,order_putin in ws_work.items():
+        for put_container_id in order_putin["container"]:
+            if container_id == put_container_id:
+                #找出container在哪些張訂單號
+                output_replenish_id_list.append(replenish_id)
+    #放入 container內要放入的商品並更新db
+    container_content_put = {}
+    myquery = { "workstation_id": workstation_id}
+    print("in workstation_replenish 放入 container內要放入的商品並更新db")
+    for output_replenish_id in output_replenish_id_list:
+        for prd,pqt in ws_work[output_replenish_id]["container"][container_id].items():
+            print("in workstation_replenish from container_id: "+str(container_id)+" replenish replenish_id: "+str(output_replenish_id)+" put pid: "+str(prd)+" pqt: "+str(pqt))
+            # ws_work[output_order_id]["prd"][prd]["qt"] -= pqt
+            #用於 修改container_db 內容
+            if prd in container_content_put:
+                container_content_put[prd] += pqt
+            else:
+                container_content_put[prd] = pqt
+            #刪除工作站內補貨單上工作項目
+            newvalues = { "$inc": { "work."+output_replenish_id+".prd."+prd+".qt":-pqt}}
+            workstation_db.update(myquery,newvalues)
+            '''改成補貨
+            #container_work_append 登入container 訂單編號 揀取商品 揀取數量
+            workreport_key = container_id
+            value_name = "order_info"
+            content = (output_replenish_id, prd, pqt, str(datetime.datetime.now()), workstation_id)
+            if content != None:
+                container_report_append(container_id, value_name, content)
+            else:
+                print("workstation_replenish content == None")
+            
+            '''
+            記錄有被撿到的單
+            '''
+            r = redis.Redis(host='localhost', port=6379, decode_responses=False)
+            if r.exists("order_list_record_" + output_replenish_id):
+                pass
+            else:
+                r.set("order_list_record_" + output_replenish_id, 1)
+            #根據揀取商品數量模擬揀取時間
+            '''
+            模擬揀單個商品花3秒
+            '''
+            waiting_time = int(pqt) * 3
+            start_time = datetime.datetime.now()
+            result = waiting_func(waiting_time, start_time)
+            while not result[0]:
+                result = waiting_func(waiting_time, start_time)
+           ''' 
+            #需求量補充完刪除訂單商品並更新db
+            print("in workstation_replenish from container_id: "+str(container_id)+" order id: "+str(output_replenish_id)+" container撿完刪除訂單商品並更新db")
+            # if ws_work[output_order_id]["prd"][prd]["qt"] == 0:
+            ws_put_work = workstation_db.find_one({"workstation_id":workstation_id})["work"]
+            if output_replenish_id in ws_put_work:
+                print("準備刪除訂單商品需求量")
+                if prd in ws_put_work[output_replenish_id]["prd"]:
+                    if ws_put_work[output_replenish_id]["prd"][prd]["qt"] == 0:
+                        print("replenish id: "+str(output_replenish_id)+" pid: "+str(prd)+" 需求量已滿足")
+                        # ws_work[output_order_id]["prd"].pop(prd,None)
+                        newvalues = { "$unset": { "work."+output_replenish_id+".prd."+prd:""}}
+                        workstation_db.update(myquery,newvalues)
+                    else:
+                        print("replenish id: "+str(output_replenish_id)+" pid: "+str(prd)+" 需求量未滿足")
+                else:
+                    print_string = "in workstation_replenish workstation_id: "+str(workstation_id)+" in replenish id: "+str(output_replenish_id)+" prd: "+str(prd)+" 已被刪除"
+                    print_coler(print_string,"b")
+            else:
+                print_string = "replenish id :"+str(output_replenish_id)+" was deleted in workstation_id: "+str(workstation_id)
+                print_coler(print_string,"b")
+            
+    #撿完container後刪除並更新workstation_db
+    for output_replenish_id in output_replenish_id_list:
+        print("in workstation_replenish replenish_id: "+str(output_replenish_id)+" pop container_id:"+str(container_id))
+        # ws_work[output_order_id]["container"].pop(container_id,None)
+        newvalues = { "$unset": { "work."+output_replenish_id+".container."+container_id:""}}
+        workstation_db.update(myquery,newvalues)
+    #更新container_db
+    container_putin(container_id, container_content_put)
+    #TODO container送回倉
+    print(" workstation_id: "+workstation_id+" order_id: "+str(output_replenish_id_list))
+    return str(output_replenish_id_list),workstation_id
+    
+    
