@@ -492,7 +492,8 @@ def arms_store(self, container_id,arm_id):
 # =============================================================================
     print("workend_record: " + container_id)
     print(container_report)
-    workreport_append_container(container_report, container_id)
+    if False:
+        workreport_append_container(container_report, container_id)
     r.delete(container_key)
     print("workend delete key" + container_key)
     #將 container_id 內商品更新 product
@@ -1999,7 +2000,7 @@ def workstation_replenish(container_id):
                 print("workstation_replenish content == None")
             
             '''
-            記錄有被撿到的單
+            #記錄有被撿到的單
             '''
             r = redis.Redis(host='localhost', port=6379, decode_responses=False)
             if r.exists("order_list_record_" + output_replenish_id):
@@ -2008,7 +2009,7 @@ def workstation_replenish(container_id):
                 r.set("order_list_record_" + output_replenish_id, 1)
             #根據揀取商品數量模擬揀取時間
             '''
-            模擬揀單個商品花3秒
+            #模擬揀單個商品花3秒
             '''
             waiting_time = int(pqt) * 3
             start_time = datetime.datetime.now()

@@ -1004,7 +1004,7 @@ def container_putin(container_id,putin):
     product_db = db["Products"]
     container_info = container_db.find_one({"container_id": container_id})
     contents = container_info['contents']
-    putin = eval(putin)
+    #putin = eval(putin)
     myquery = { "container_id": container_id }
     newvalues = {}
     for k,v in putin.items():
